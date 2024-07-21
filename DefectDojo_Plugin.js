@@ -397,12 +397,14 @@
                     tooltip.innerHTML += `;<br>Status: ${task.status};<br>Assignee: ${task.assignee};`;
 
                     // Подсветка полей чекбокса
+                    // Закомментировать эту часть, если используется подсветка целого поля уязвимости 
                     row.style.backgroundColor = task.assignee === 'N/A' ? 'lightgreen' : 'yellow';
                 } else {
                     tooltip.innerHTML = "ID: N/A;<br>Status: N/A;<br>Assignee: N/A;";
                     row.style.backgroundColor = 'lightcoral';
                 }
-
+                //
+                
                 row.appendChild(tooltip);
 
                 // Добавляем события для показа и скрытия тултипа
