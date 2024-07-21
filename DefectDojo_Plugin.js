@@ -4,7 +4,7 @@
 // @version      1.0
 // @description  Отправляет уязвимости в OpenProject, подсвечивает их при определенных условиях
 // @author       Marauder
-// @match        https://your_defectdojo_domain/finding*
+// @match        https://YOUR_DEFECTDOJO_DOMAIN/finding*
 // @grant        GM_xmlhttpRequest
 // @require      https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js
 // ==/UserScript==
@@ -13,14 +13,14 @@
     "use strict";
 
     // OpenProject API настройки
-    const openprojectUrl = "https://your_openproject_domain/api/v3/projects/{project_id}/work_packages";
-    const apiKeyOP = "your_api_key";
+    const openprojectUrl = "https://YOUR_OPENPROJECT_DOMAIN/api/v3/projects/project_id/work_packages"; //ЗАМЕНИТЬ ИНФОРМАЦИЮ. Example: https://localhost:8080/api/v3/projects/3/work_packages
+    const apiKeyOP = "your_api_key";  //Ключ в https://localhost:8080/my/access_token
     const creatingApiToken = btoa(`apikey:${apiKeyOP}`);    //Ключ кодируется в base64
     const openprojectAuth = `Basic ${creatingApiToken}`;  
 
     // DefectDojo API настройки
-    const defectDojoUrl = 'https://your_defectdojo_domain/api/v2/';
-    const defectDojoToken = 'Token d283e5f2fb2945730149d0fbdf2b896a91b4d445'; 
+    const defectDojoUrl = 'https://YOUR_DEFECTDOJO_DOMAIN/api/v2/'; //ЗАМЕНИТЬ ИНФОРМАЦИЮ. Example: https://demo.defectdojo.org/api/v2/
+    const defectDojoToken = 'Token YOUR_API_TOKEN'; //ЗАМЕНИТЬ ИНФОРМАЦИЮ. Ключ в https://your_defectdojo_domain/api/key-v2
 
     // Функция для добавления кнопки
     function addButton() {
@@ -42,7 +42,7 @@
             alert("Please select at least one finding.");
             return;
         }
-        console.log("Selected Findings:", findingIds); // Логируем массив выбранных уязвимостей
+        console.log("Selected Findings:", findingIds); 
 
         fetchOpenProjectTasks(openprojectTasks => {
             processFindings(findingIds, openprojectTasks);
@@ -57,7 +57,7 @@
                 finding.productLink = findingIds[index].productLink;
                 processFinding(finding, openprojectTasks);
             });
-            console.log("Findings Data:", findings); // Логируем массив данных всех уязвимостей
+            console.log("Findings Data:", findings); 
             alert(`Processed ${findings.length} findings for OpenProject`);
         });
     }
@@ -80,7 +80,7 @@
     // Функция для извлечения ссылки на engagement
     function extractEngagementLink(row) {
         const engagementLink = row.querySelector("a[href*='/engagement/']").getAttribute("href");
-        const fullEngagementLink = `https://your_defectdojo_domain${engagementLink}`; //ЗАМЕНИТЬ ИНФОРМАЦИЮ. Перед $ / не ставить  
+        const fullEngagementLink = `https://YOUR_DEFECTDOJO_DOMAIN${engagementLink}`; //ЗАМЕНИТЬ ИНФОРМАЦИЮ. Example: https://demo.defectdojo.org
         // Удаляем часть URL, начиная с '/risk_acceptance'
         return fullEngagementLink.split('/risk_acceptance')[0];
     }
@@ -88,7 +88,7 @@
     // Функция для извлечения ссылки на product
     function extractProductLink(row) {
         const productLink = row.querySelector("a[href*='/product/']").getAttribute("href");
-        const fullProductLink = `https://your_defectdojo_domain${productLink}`; //ЗАМЕНИТЬ ИНФОРМАЦИЮ.Перед $ / не ставить
+        const fullProductLink = `https://YOUR_DEFECTDOJO_DOMAIN${productLink}`; //ЗАМЕНИТЬ ИНФОРМАЦИЮ. Example: https://demo.defectdojo.org
         return fullProductLink;
     }
 
@@ -135,7 +135,7 @@
     // Запрос данных OpenProject 
     function parseOpenProjectData(data) {
         return data._embedded.elements.map(task => {
-            const findingUrlMatch = task.description.raw.match(/https:\/\/your_defectdojo_domain\/finding\/(\d+)/); //ЗАМЕНИТЬ ИНФОРМАЦИЮ.
+            const findingUrlMatch = task.description.raw.match(/https:\/\/YOUR_DEFECTDOJO_DOMAIN\/finding\/(\d+)/); //ЗАМЕНИТЬ ИНФОРМАЦИЮ. Example: /https:\/\/demo.defectdojo.org\/finding\/(\d+)/
             return {
                 id: task.id,
                 status: task._links.status.title,
@@ -153,7 +153,7 @@
     // Функция для получения данных из DefectDojo API о найденных уязвимостях
     async function fetchFindingsData(findingIds, callback) {
         const findings = [];
-        const delayMs = 100; // Задержка между запросами
+        const delayMs = 100; // Задержка между запросами в мс
         let requestsCompleted = 0;
 
         for (const id of findingIds) {
@@ -194,7 +194,6 @@
             });
         }
     }
-
 
     // Функция для получения имен продукта и engagement
     function getProductAndEngagementNames(finding, callback) {
@@ -296,7 +295,7 @@
         // Функция для создания задачи в OpenProject, если она не существует
     function createOpenProjectTaskIfNotExists(finding, openprojectTasks) {
         const { id, engagementLink, productLink, productName, engagementName, vulnerabilityIds, cwe, severity, description } = finding;
-        const findingUrl = `https://your_defectdojo_domain/finding/${id}`; //ЗАМЕНИТЬ ИНФОРМАЦИЮ.
+        const findingUrl = `https://YOUR_DEFECTDOJO_DOMAIN/finding/${id}`; //ЗАМЕНИТЬ ИНФОРМАЦИЮ. Example: https://demo.defectdojo.org/finding/
 
         // Проверяем, существует ли уже задача в OpenProject
         const taskExists = openprojectTasks.some(task => task.description.raw.includes(findingUrl));
@@ -326,7 +325,7 @@
                 raw: `**Finding ID/URL:** [${id}](${findingUrl})\n**CWE:** ${cweText}\n**Vulnerability IDs:** ${vulnerabilityLinks}\n**Severity:** ${severityText}\n**Product Link:** ${productLinkMarkdown}\n**Engagement Link:** ${engagementLinkMarkdown}\n\n**Description:** \n\n ${description}`
             },
             project: {
-                href: "/api/v3/projects/your_project_id" //ЗАМЕНИТЬ ИНФОРМАЦИЮ.
+                href: "/api/v3/projects/YOUR_PROJECT_ID" //ЗАМЕНИТЬ ИНФОРМАЦИЮ. Example: "/api/v3/projects/3" или "/api/v3/projects/demoDefect "(Имя проекта)
             }
         };
 
@@ -343,7 +342,7 @@
                     console.log(`Task created for finding: ${finding.title}`);
                 } else {
                     console.error(`Failed to create task: ${response.status} - ${response.statusText}`);
-                    console.error(response.responseText); // Выводим текст ошибки для отладки
+                    console.error(response.responseText); 
                 }
             },
             onerror: error => {
@@ -385,7 +384,7 @@
 
                 if (task) {
                     const link = document.createElement('a');
-                    link.href = `https://your_openproject_domain/projects/your_project_id/work_packages/${task.id}`; //ЗАМЕНИТЬ ИНФОРМАЦИЮ.
+                    link.href = `https://YOUR_OPENPROJECT_DOMAIN/projects/YOUR_PROJECT_ID/work_packages/${task.id}`; //ЗАМЕНИТЬ ИНФОРМАЦИЮ. Example: `https://localhost:8080/projects/3/work_packages/
                     link.target = '_blank';
                     link.innerText = `${task.id}`;
                     link.style.color = '#3fa5cc';
