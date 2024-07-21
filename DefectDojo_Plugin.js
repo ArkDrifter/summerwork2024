@@ -43,20 +43,31 @@
             return;
         }
         console.log("Selected Findings:", findingIds); // Логируем массив выбранных уязвимостей
+
         fetchOpenProjectTasks(openprojectTasks => {
-            fetchFindingsData(findingIds.map(finding => finding.id), findings => {
-                findings.forEach((finding, index) => {
-                    finding.engagementLink = findingIds[index].engagementLink;
-                    finding.productLink = findingIds[index].productLink;
-                    getProductAndEngagementNames(finding, productAndEngagementNames => {
-                        finding.productName = productAndEngagementNames.productName;
-                        finding.engagementName = productAndEngagementNames.engagementName;
-                        createOpenProjectTaskIfNotExists(finding, openprojectTasks);
-                    });
-                });
-                console.log("Findings Data:", findings); // Логируем массив данных всех уязвимостей
-                alert(`Processed ${findings.length} findings for OpenProject`);
+            processFindings(findingIds, openprojectTasks);
+        });
+    }
+
+    // Функция для обработки уязвимостей
+    function processFindings(findingIds, openprojectTasks) {
+        fetchFindingsData(findingIds.map(finding => finding.id), findings => {
+            findings.forEach((finding, index) => {
+                finding.engagementLink = findingIds[index].engagementLink;
+                finding.productLink = findingIds[index].productLink;
+                processFinding(finding, openprojectTasks);
             });
+            console.log("Findings Data:", findings); // Логируем массив данных всех уязвимостей
+            alert(`Processed ${findings.length} findings for OpenProject`);
+        });
+    }
+
+    // Функция для обработки отдельной уязвимости
+    function processFinding(finding, openprojectTasks) {
+        getProductAndEngagementNames(finding, productAndEngagementNames => {
+            finding.productName = productAndEngagementNames.productName;
+            finding.engagementName = productAndEngagementNames.engagementName;
+            createOpenProjectTaskIfNotExists(finding, openprojectTasks);
         });
     }
 
@@ -345,27 +356,29 @@
     function createTooltips(data) {
         // Выбираем все чекбоксы уязвимостей
         const checkboxes = document.querySelectorAll('.active_finding .noVis:first-child form input');
+        const processedIds = []; // Массив для хранения обработанных ID
 
         checkboxes.forEach(checkbox => {
             if (checkbox.parentElement && checkbox.parentElement.parentElement) {
-                checkbox.parentElement.parentElement.style.position = 'relative';
+                const row = checkbox.parentElement.parentElement;
+                row.style.position = 'relative';
 
                 const tooltip = document.createElement('div');
                 tooltip.className = 'custom-tooltip';
                 tooltip.style.position = 'absolute';
                 tooltip.style.display = 'none';
-                tooltip.style.minWidth = '250px';  
-                tooltip.style.maxWidth = '1000px';  
-                tooltip.style.backgroundColor = 'rgba(51, 51, 51, 0.85)'; 
+                tooltip.style.minWidth = '250px';
+                tooltip.style.maxWidth = '1000px';
+                tooltip.style.backgroundColor = 'rgba(51, 51, 51, 0.85)';
                 tooltip.style.color = '#fff';
-                tooltip.style.textAlign = 'left';   
+                tooltip.style.textAlign = 'left';
                 tooltip.style.borderRadius = '6px';
                 tooltip.style.padding = '10px';
                 tooltip.style.zIndex = '10001';
                 tooltip.style.top = '-50%';
                 tooltip.style.left = '100%';
-                tooltip.style.whiteSpace = 'normal';  
-                tooltip.style.wordWrap = 'break-word'; 
+                tooltip.style.whiteSpace = 'normal';
+                tooltip.style.wordWrap = 'break-word';
 
                 // Ищем задачу, соответствующую уязвимости
                 const task = data.find(task => task.findingUrl.includes(`/finding/${checkbox.id}`));
@@ -375,44 +388,68 @@
                     link.href = `https://your_openproject_domain/projects/your_project_id/work_packages/${task.id}`; //ЗАМЕНИТЬ ИНФОРМАЦИЮ.
                     link.target = '_blank';
                     link.innerText = `${task.id}`;
-                    link.style.color = '#3fa5cc';  
+                    link.style.color = '#3fa5cc';
 
                     tooltip.innerHTML = `ID: `;
                     tooltip.appendChild(link);
                     tooltip.innerHTML += `;<br>Status: ${task.status};<br>Assignee: ${task.assignee};`;
 
-                    // Подсветка полей чекбокса. Если существует - зеленое, если есть исполнитель - желтое, если нет - красное.
-                    if (task.assignee === 'N/A') {
-                        checkbox.parentElement.parentElement.style.backgroundColor = 'lightgreen';
-                    } else {
-                        checkbox.parentElement.parentElement.style.backgroundColor = 'yellow';
-                    }
+                    // Подсветка полей чекбокса
+                    row.style.backgroundColor = task.assignee === 'N/A' ? 'lightgreen' : 'yellow';
                 } else {
                     tooltip.innerHTML = "ID: N/A;<br>Status: N/A;<br>Assignee: N/A;";
-                    checkbox.parentElement.parentElement.style.backgroundColor = 'lightcoral';
+                    row.style.backgroundColor = 'lightcoral';
                 }
 
-                checkbox.parentElement.parentElement.appendChild(tooltip);
+                row.appendChild(tooltip);
 
                 // Добавляем события для показа и скрытия тултипа
-                checkbox.parentElement.parentElement.addEventListener('mouseover', () => {
+                row.addEventListener('mouseover', () => {
                     tooltip.style.display = 'block';
                 });
 
-                checkbox.parentElement.parentElement.addEventListener('mouseout', () => {
+                row.addEventListener('mouseout', () => {
                     tooltip.style.display = 'none';
                 });
 
-                console.log('Tooltip created for checkbox with ID:', checkbox.id);
+                processedIds.push(checkbox.id);
             }
         });
+
+        console.log('Processed IDs for tooltips:', processedIds);
     }
+
+    //Расскоментировать, если хотите подсветку всей строки. Сделать то же самое в main.
+    /*function highlightFindings(openprojectTasks) {
+        const rows = document.querySelectorAll('tr.active_finding');
+    
+        rows.forEach(row => {
+            const findingLink = row.querySelector('a[href*="/finding/"]');
+            if (findingLink) {
+                const findingId = findingLink.href.split('/').pop();
+                const task = openprojectTasks.find(task => task.findingUrl.includes(`/finding/${findingId}`));
+    
+                if (task) {
+                    if (task.assignee === 'N/A') {
+                        row.style.backgroundColor = 'lightgreen';
+                    } else {
+                        row.style.backgroundColor = 'yellow';
+                    }
+                    console.log(`Finding ID ${findingId} exists in OpenProject, highlighted green or yellow.`);
+                } else {
+                    row.style.backgroundColor = 'lightcoral';
+                    console.log(`Finding ID ${findingId} does not exist in OpenProject, highlighted red.`);
+                }
+            }
+        });
+    }*/
 
     // Main функция для запроса данных и добавления тултипа
     async function main() {
         try {
             const openProjectData = await fetchOpenProjectData(openprojectUrl, openprojectAuth);
             const parsedOpenProjectData = parseOpenProjectData(openProjectData);
+            //highlightFindings(parsedOpenProjectData);
             console.log('Parsed OpenProject Data:', parsedOpenProjectData);
 
             createTooltips(parsedOpenProjectData);
