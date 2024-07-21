@@ -34,24 +34,31 @@
 
 <hr>
 
+## Как использовать: ❔
+
+1. Включить ["Developer Mode"](https://www.tampermonkey.net/faq.php#Q209) в расширениях браузера. 🐵
+
+2. Загрузить [Tampermonkey](https://www.tampermonkey.net/index.php) ⬇️
+
+3. **[«Установите Скрипт»](https://raw.githubusercontent.com/ArkDrifter/summerwork2024/main/DefectDojo_Plugin.js)** ✔️
+
 ## Что использовалось: ❓
 
 1. OpenProject:
     
-	- Docker: https://hub.docker.com/r/openproject/openproject?uuid=FF6F4ABB-2650-41A2-9EC1-418FDF6E435F
+	- 🐳 Docker: https://hub.docker.com/r/openproject/openproject?uuid=FF6F4ABB-2650-41A2-9EC1-418FDF6E435F 
 	
-	- Документация API: https://www.openproject.org/docs/installation-and-operations/installation/docker/
+	- 📰 Документация API: https://www.openproject.org/docs/installation-and-operations/installation/docker/ 
 
 2. DefectDojo:
     
-	- Как собрать образ для Docker: https://github.com/DefectDojo/django-DefectDojo/blob/master/readme-docs/DOCKER.md
+	- ❔ Как собрать образ для Docker: https://github.com/DefectDojo/django-DefectDojo/blob/master/readme-docs/DOCKER.md 
     
-	- Git: https://github.com/DefectDojo/django-DefectDojo
+	- Git: https://github.com/DefectDojo/django-DefectDojo 
     
-	- Демо-сайт: https://demo.defectdojo.org/
+	- 🌐 Демо-сайт: https://demo.defectdojo.org/ 
 
-	- Документация API: https://defectdojo.github.io/django-DefectDojo/integrations/api-v2-docs/
+	- 📰 Документация API: https://defectdojo.github.io/django-DefectDojo/integrations/api-v2-docs/ 
 
-3. Tampermonkey:
-    
-	 - https://www.tampermonkey.net/index.php
+3. [Tampermonkey](https://www.tampermonkey.net/index.php)
+
