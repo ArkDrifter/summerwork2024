@@ -7,6 +7,9 @@
 // @match        https://YOUR_DEFECTDOJO_DOMAIN/finding*
 // @grant        GM_xmlhttpRequest
 // @require      https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js
+// @homepageURL    https://github.com/ArkDrifter/summerwork2024/issues
+// @updateURL      https://raw.githubusercontent.com/ArkDrifter/summerwork2024/main/DefectDojo_Plugin.js
+// @downloadURL    https://raw.githubusercontent.com/ArkDrifter/summerwork2024/main/DefectDojo_Plugin.js
 // ==/UserScript==
 
 (function ($) {
