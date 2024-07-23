@@ -1,5 +1,6 @@
 # ***/summerwork/*** Plugin for DefectDojo 🧏‍♂️.
 
+![visitor badge](https://visitor-badge.laobi.icu/badge?page_id=ArkDrifter.summerwork2024)
 
 <p align="center">
   <img width="400" height="250" src="https://sun9-65.userapi.com/impg/wOmndm1prNRuqVwXis9at_Z4BaV9n7L-haPFSg/1iI2-wXVj1U.jpg?size=640x640&quality=95&sign=640a7d0388c6395e36a7640b13836872&type=album" alt=💀>
