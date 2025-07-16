@@ -1,101 +1,421 @@
 // ==UserScript==
 // @name         DefectDojo Plugin
 // @namespace    http://tampermonkey.net/
-// @version      1.0
+// @version      1.1
 // @description  Отправляет уязвимости в OpenProject, подсвечивает их при определенных условиях
 // @author       Marauder
 // @match        https://YOUR_DEFECTDOJO_DOMAIN/finding*
 // @grant        GM_xmlhttpRequest
-// @require      https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js
+// @grant        GM_addStyle
+// @grant        GM_setValue
+// @grant        GM_getValue
 // @homepageURL  https://github.com/ArkDrifter/summerwork2024/issues
 // @updateURL    https://raw.githubusercontent.com/ArkDrifter/summerwork2024/main/DefectDojo_Plugin.js
 // @downloadURL  https://raw.githubusercontent.com/ArkDrifter/summerwork2024/main/DefectDojo_Plugin.js
 // ==/UserScript==
 
-(function ($) {
+(function() {
     "use strict";
 
-    // OpenProject API настройки
-    const openprojectUrl = "https://YOUR_OPENPROJECT_DOMAIN/api/v3/projects/project_id/work_packages"; //ЗАМЕНИТЬ ИНФОРМАЦИЮ. Example: https://localhost:8080/api/v3/projects/3/work_packages
-    const apiKeyOP = "your_api_key";  //Ключ в https://localhost:8080/my/access_token
-    const creatingApiToken = btoa(`apikey:${apiKeyOP}`);    //Ключ кодируется в base64
-    const openprojectAuth = `Basic ${creatingApiToken}`;  
-
-    // DefectDojo API настройки
-    const defectDojoUrl = 'https://YOUR_DEFECTDOJO_DOMAIN/api/v2/'; //ЗАМЕНИТЬ ИНФОРМАЦИЮ. Example: https://demo.defectdojo.org/api/v2/
-    const defectDojoToken = 'Token YOUR_API_TOKEN'; //ЗАМЕНИТЬ ИНФОРМАЦИЮ. Ключ в https://your_defectdojo_domain/api/key-v2
-
-    // Функция для добавления кнопки
-    function addButton() {
-        const btnGroup = document.querySelector(".dt-buttons.btn-group");
-        if (btnGroup) {
-            const button = document.createElement("button");
-            button.className = "btn btn-default";
-            button.type = "button";
-            button.innerHTML = "<span>Send to OpenProject</span>";
-            button.onclick = handleButtonClick;
-            btnGroup.appendChild(button);
+    // ========== CONFIGURATION ==========
+    // Настройки плагина - все в одном месте для удобной настройки
+    const CONFIG = {
+        // DefectDojo настройки
+        defectDojo: {
+            domain: 'YOUR_DEFECTDOJO_DOMAIN', // Example: demo.defectdojo.org
+            apiUrl: 'https://YOUR_DEFECTDOJO_DOMAIN/api/v2/', // Example: https://demo.defectdojo.org/api/v2/
+            apiToken: 'YOUR_API_TOKEN', // Ключ в https://your_defectdojo_domain/api/key-v2
+        },
+        
+        // OpenProject настройки
+        openProject: {
+            domain: 'YOUR_OPENPROJECT_DOMAIN', // Example: localhost:8080
+            projectId: 'YOUR_PROJECT_ID', // Example: 3 или "demoDefect"
+            apiUrl: 'https://YOUR_OPENPROJECT_DOMAIN/api/v3/projects/YOUR_PROJECT_ID/work_packages', // Example: https://localhost:8080/api/v3/projects/3/work_packages
+            apiKey: 'your_api_key', // Ключ в https://localhost:8080/my/access_token
+        },
+        
+        // Настройки визуализации
+        ui: {
+            // Режим подсветки: 'checkbox' - только чекбокс, 'row' - вся строка
+            highlightMode: 'checkbox',
+            // Цвета для разных статусов
+            colors: {
+                notAssigned: 'lightgreen', // Задача создана, но не назначена
+                assigned: 'yellow',       // Задача назначена
+                notExists: 'lightcoral'   // Задача не существует
+            },
+            // Задержка между запросами в мс
+            requestDelay: 100
+        },
+        
+        // Настройки запросов к API
+        api: {
+            // Максимальное количество одновременных запросов
+            batchSize: 5
         }
-    }
+    };
 
-    // Функция для обработки клика по кнопке
-    function handleButtonClick() {
-        const findingIds = extractSelectedFindings();
-        if (findingIds.length === 0) {
-            alert("Please select at least one finding.");
-            return;
+    // Создаем токены авторизации один раз
+    const AUTH = {
+        defectDojo: `Token ${CONFIG.defectDojo.apiToken}`,
+        openProject: `Basic ${btoa(`apikey:${CONFIG.openProject.apiKey}`)}`
+    };
+
+    // ========== ДОБАВЛЯЕМ CSS СТИЛИ ==========
+    GM_addStyle(`
+        .dd-button {
+            margin-right: 8px;
+            display: inline-flex;
+            align-items: center;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.3s;
         }
-        console.log("Selected Findings:", findingIds); 
+        
+        .dd-button:hover {
+            background-color: #45a049;
+        }
+        
+        .dd-button:active {
+            background-color: #3e8e41;
+        }
+        
+        .dd-button svg {
+            margin-right: 8px;
+        }
+        
+        .dd-loader {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            margin-right: 8px;
+            border: 3px solid rgba(255,255,255,.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 1s ease-in-out infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        .dd-tooltip {
+            position: absolute;
+            display: none;
+            min-width: 250px;
+            max-width: 500px;
+            background-color: rgba(51, 51, 51, 0.95);
+            color: #fff;
+            text-align: left;
+            border-radius: 6px;
+            padding: 12px;
+            z-index: 10001;
+            top: -50%;
+            left: 100%;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+            font-size: 13px;
+            line-height: 1.4;
+        }
+        
+        .dd-tooltip-header {
+            display: flex;
+            justify-content: space-between;
+            border-bottom: 1px solid rgba(255,255,255,0.2);
+            padding-bottom: 8px;
+            margin-bottom: 8px;
+        }
+        
+        .dd-tooltip-content {
+            margin-top: 8px;
+        }
+        
+        .dd-status-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        
+        .dd-notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 16px;
+            background-color: #333;
+            color: white;
+            border-radius: 4px;
+            z-index: 10002;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+            transition: opacity 0.3s, transform 0.3s;
+            opacity: 0;
+            transform: translateY(-20px);
+        }
+        
+        .dd-notification.show {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        
+        .dd-notification.success {
+            background-color: #4CAF50;
+        }
+        
+        .dd-notification.error {
+            background-color: #f44336;
+        }
+        
+        .dd-notification.warning {
+            background-color: #ff9800;
+        }
+    `);
 
-        fetchOpenProjectTasks(openprojectTasks => {
-            processFindings(findingIds, openprojectTasks);
-        });
+    // ========== УТИЛИТЫ ==========
+    
+    // Функция для отображения уведомлений
+    function showNotification(message, type = 'info', duration = 3000) {
+        // Удаляем предыдущие уведомления
+        const existingNotifications = document.querySelectorAll('.dd-notification');
+        existingNotifications.forEach(notification => notification.remove());
+        
+        const notification = document.createElement('div');
+        notification.className = `dd-notification ${type}`;
+        notification.textContent = message;
+        document.body.appendChild(notification);
+        
+        // Показываем уведомление
+        setTimeout(() => notification.classList.add('show'), 10);
+        
+        // Скрываем через указанное время
+        setTimeout(() => {
+            notification.classList.remove('show');
+            setTimeout(() => notification.remove(), 300);
+        }, duration);
     }
-
-    // Функция для обработки уязвимостей
-    function processFindings(findingIds, openprojectTasks) {
-        fetchFindingsData(findingIds.map(finding => finding.id), findings => {
-            findings.forEach((finding, index) => {
-                finding.engagementLink = findingIds[index].engagementLink;
-                finding.productLink = findingIds[index].productLink;
-                processFinding(finding, openprojectTasks);
+    
+    // Функция задержки
+    function delay(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+    
+    // Функция для выполнения HTTP запросов
+    function makeRequest(method, url, headers, data = null) {
+        return new Promise((resolve, reject) => {
+            GM_xmlhttpRequest({
+                method: method,
+                url: url,
+                headers: headers,
+                data: data ? JSON.stringify(data) : undefined,
+                onload: response => {
+                    if (response.status >= 200 && response.status < 300) {
+                        try {
+                            const result = JSON.parse(response.responseText);
+                            resolve(result);
+                        } catch (e) {
+                            resolve(response.responseText);
+                        }
+                    } else {
+                        reject({
+                            status: response.status,
+                            statusText: response.statusText,
+                            response: response.responseText
+                        });
+                    }
+                },
+                onerror: error => {
+                    reject(error);
+                }
             });
-            console.log("Findings Data:", findings); 
-            alert(`Processed ${findings.length} findings for OpenProject`);
         });
     }
-
-    // Функция для обработки отдельной уязвимости
-    function processFinding(finding, openprojectTasks) {
-        getProductAndEngagementNames(finding, productAndEngagementNames => {
-            finding.productName = productAndEngagementNames.productName;
-            finding.engagementName = productAndEngagementNames.engagementName;
-            createOpenProjectTaskIfNotExists(finding, openprojectTasks);
-        });
+    
+    // Функция для пакетной обработки запросов
+    async function processBatch(items, processFn, batchSize = CONFIG.api.batchSize) {
+        const results = [];
+        
+        for (let i = 0; i < items.length; i += batchSize) {
+            const batch = items.slice(i, i + batchSize);
+            const batchPromises = batch.map(item => processFn(item));
+            
+            try {
+                const batchResults = await Promise.all(batchPromises);
+                results.push(...batchResults);
+                
+                // Небольшая задержка между партиями
+                if (i + batchSize < items.length) {
+                    await delay(CONFIG.ui.requestDelay);
+                }
+            } catch (error) {
+                console.error('Error processing batch:', error);
+            }
+        }
+        
+        return results.filter(result => result !== null);
     }
 
-    // Функция для извлечения ID уязвимостей
+    // ========== РАБОТА С OPENPROJECT ==========
+    
+    // Получение задач из OpenProject
+    async function fetchOpenProjectTasks() {
+        try {
+            const data = await makeRequest('GET', CONFIG.openProject.apiUrl, {
+                'Authorization': AUTH.openProject,
+                'Content-Type': 'application/json'
+            });
+            
+            return parseOpenProjectTasks(data);
+        } catch (error) {
+            showNotification(`Ошибка получения задач из OpenProject: ${error.statusText || 'сетевая ошибка'}`, 'error');
+            console.error('Error fetching OpenProject tasks:', error);
+            return [];
+        }
+    }
+    
+    // Парсинг данных задач из OpenProject
+    function parseOpenProjectTasks(data) {
+        return data._embedded.elements.map(task => {
+            // Регулярное выражение для извлечения ID уязвимости из описания
+            const findingUrlRegex = new RegExp(`https://${CONFIG.defectDojo.domain}/finding/(\\d+)`);
+            const findingUrlMatch = task.description.raw.match(findingUrlRegex);
+            
+            return {
+                id: task.id,
+                subject: task.subject,
+                status: task._links.status.title,
+                assignee: task._links.assignee && task._links.assignee.title ? task._links.assignee.title : 'N/A',
+                findingUrl: findingUrlMatch ? findingUrlMatch[0] : 'N/A',
+                findingId: findingUrlMatch ? findingUrlMatch[1] : null
+            };
+        });
+    }
+    
+    // Создание задачи в OpenProject
+    async function createOpenProjectTask(finding) {
+        const { id, title, productName, engagementName, vulnerabilityIds, cwe, severity, description } = finding;
+        const findingUrl = `https://${CONFIG.defectDojo.domain}/finding/${id}`;
+        
+        // Формируем ссылки на уязвимости
+        const vulnerabilityLinks = vulnerabilityIds && vulnerabilityIds.length > 0
+            ? vulnerabilityIds.map(vul => `[${vul.vulnerability_id}](https://cve.mitre.org/cgi-bin/cvename.cgi?name=${vul.vulnerability_id})`).join(", ")
+            : "N/A";
+        
+        // Формируем ссылки на CWE
+        const cweText = cwe ? `[CWE-${cwe}](https://cwe.mitre.org/data/definitions/${cwe}.html)` : "N/A";
+        
+        // Формируем ссылки на продукт и engagement
+        const productLinkMarkdown = productName ? `[${productName}](${finding.productLink})` : "N/A";
+        const engagementLinkMarkdown = engagementName ? `[${engagementName}](${finding.engagementLink})` : "N/A";
+        
+        // Формируем данные для создания задачи
+        const taskData = {
+            subject: title,
+            description: {
+                format: "markdown",
+                raw: `**Finding ID/URL:** [${id}](${findingUrl})\n**CWE:** ${cweText}\n**Vulnerability IDs:** ${vulnerabilityLinks}\n**Severity:** ${severityText}\n**Product:** ${productLinkMarkdown}\n**Engagement:** ${engagementLinkMarkdown}\n\n**Description:** \n\n${description}`
+            },
+            project: {
+                href: `/api/v3/projects/${CONFIG.openProject.projectId}`
+            }
+        };
+        
+        try {
+            const response = await makeRequest('POST', CONFIG.openProject.apiUrl, {
+                'Authorization': AUTH.openProject,
+                'Content-Type': 'application/json'
+            }, taskData);
+            
+            showNotification(`Задача успешно создана: ${title}`, 'success');
+            return response;
+        } catch (error) {
+            showNotification(`Ошибка создания задачи: ${error.statusText || 'сетевая ошибка'}`, 'error');
+            console.error('Error creating task:', error);
+            return null;
+        }
+    }
+
+    // ========== РАБОТА С DEFECTDOJO ==========
+    
+    // Получение данных о уязвимости из DefectDojo
+    async function fetchFindingData(id) {
+        try {
+            const finding = await makeRequest('GET', `${CONFIG.defectDojo.apiUrl}findings/${id}/`, {
+                'Authorization': AUTH.defectDojo,
+                'Content-Type': 'application/json'
+            });
+            
+            return {
+                id: finding.id,
+                title: finding.title,
+                vulnerabilityIds: finding.vulnerability_ids,
+                cwe: finding.cwe,
+                severity: finding.severity,
+                description: finding.description || "N/A"
+            };
+        } catch (error) {
+            console.error(`Error fetching finding ${id}:`, error);
+            return null;
+        }
+    }
+    
+    // Получение информации о продукте
+    async function fetchProductData(productId) {
+        try {
+            const product = await makeRequest('GET', `${CONFIG.defectDojo.apiUrl}products/${productId}/`, {
+                'Authorization': AUTH.defectDojo,
+                'Content-Type': 'application/json'
+            });
+            
+            return product.name;
+        } catch (error) {
+            console.error(`Error fetching product ${productId}:`, error);
+            return 'N/A';
+        }
+    }
+    
+    // Получение информации о engagement
+    async function fetchEngagementData(engagementId) {
+        try {
+            const engagement = await makeRequest('GET', `${CONFIG.defectDojo.apiUrl}engagements/${engagementId}/`, {
+                'Authorization': AUTH.defectDojo,
+                'Content-Type': 'application/json'
+            });
+            
+            return engagement.name;
+        } catch (error) {
+            console.error(`Error fetching engagement ${engagementId}:`, error);
+            return 'N/A';
+        }
+    }
+    
+    // ========== ОБРАБОТКА УЯЗВИМОСТЕЙ ==========
+    
+    // Извлечение ID уязвимости из строки таблицы
     function extractFindingId(row) {
         const findingUrl = row.querySelector("a[title]")?.getAttribute("href") || "";
         return findingUrl.split("/").pop();
     }
-
-    // Функция для извлечения ссылки на engagement
+    
+    // Извлечение ссылки на engagement
     function extractEngagementLink(row) {
         const engagementLink = row.querySelector("a[href*='/engagement/']").getAttribute("href");
-        const fullEngagementLink = `https://YOUR_DEFECTDOJO_DOMAIN${engagementLink}`; //ЗАМЕНИТЬ ИНФОРМАЦИЮ. Example: https://demo.defectdojo.org
+        const fullEngagementLink = `https://${CONFIG.defectDojo.domain}${engagementLink}`;
         // Удаляем часть URL, начиная с '/risk_acceptance'
         return fullEngagementLink.split('/risk_acceptance')[0];
     }
-
-    // Функция для извлечения ссылки на product
+    
+    // Извлечение ссылки на product
     function extractProductLink(row) {
         const productLink = row.querySelector("a[href*='/product/']").getAttribute("href");
-        const fullProductLink = `https://YOUR_DEFECTDOJO_DOMAIN${productLink}`; //ЗАМЕНИТЬ ИНФОРМАЦИЮ. Example: https://demo.defectdojo.org
+        const fullProductLink = `https://${CONFIG.defectDojo.domain}${productLink}`;
         return fullProductLink;
     }
-
-    // Функция для получения данных о выбранных уязвимостях
+    
+    // Получение данных о выбранных уязвимостях
     function extractSelectedFindings() {
         const findingIds = [];
         document.querySelectorAll('tr.active_finding input[type="checkbox"]:checked').forEach(checkbox => {
@@ -104,366 +424,240 @@
             if (findingId) {
                 findingIds.push({
                     id: findingId,
+                    row: row,
                     engagementLink: extractEngagementLink(row),
-                    productLink: extractProductLink(row)
+                    productLink: extractProductLink(row),
+                    engagementId: extractEngagementLink(row).split("/").pop(),
+                    productId: extractProductLink(row).split("/").pop()
                 });
             }
         });
         return findingIds;
     }
-
-    // Функция для получения данных OpenProject с помощью GM_xmlhttpRequest
-    function fetchOpenProjectData(urlOpenProject, apiKey) {
-        return new Promise((resolve, reject) => {
-            GM_xmlhttpRequest({
-                method: 'GET',
-                url: urlOpenProject,
-                headers: {
-                    'Authorization': apiKey
-                },
-                onload: function(response) {
-                    if (response.status >= 200 && response.status < 300) {
-                        resolve(JSON.parse(response.responseText));
-                    } else {
-                        reject(response.statusText);
-                    }
-                },
-                onerror: function(error) {
-                    reject(error);
-                }
-            });
+    
+    // Обработка всех уязвимостей
+    async function processFindings(selectedFindings) {
+        // Получаем существующие задачи из OpenProject
+        const openProjectTasks = await fetchOpenProjectTasks();
+        
+        // Показываем индикатор загрузки
+        showNotification(`Обработка ${selectedFindings.length} уязвимостей...`, 'info');
+        
+        // Ставим индикаторы загрузки для выбранных строк
+        selectedFindings.forEach(finding => {
+            finding.row.style.backgroundColor = 'rgba(0, 0, 255, 0.1)';
         });
-    }
-
-    // Запрос данных OpenProject 
-    function parseOpenProjectData(data) {
-        return data._embedded.elements.map(task => {
-            const findingUrlMatch = task.description.raw.match(/https:\/\/YOUR_DEFECTDOJO_DOMAIN\/finding\/(\d+)/); //ЗАМЕНИТЬ ИНФОРМАЦИЮ. Example: /https:\/\/demo.defectdojo.org\/finding\/(\d+)/
-            return {
-                id: task.id,
-                status: task._links.status.title,
-                assignee: task._links.assignee && task._links.assignee.title ? task._links.assignee.title : 'N/A',
-                findingUrl: findingUrlMatch ? findingUrlMatch[0] : 'N/A'
-            };
-        });
-    }
-
-    // Функция задержки
-    function delay(ms) {
-        return new Promise(resolve => setTimeout(resolve, ms));
-    }
-
-    // Функция для получения данных из DefectDojo API о найденных уязвимостях
-    async function fetchFindingsData(findingIds, callback) {
-        const findings = [];
-        const delayMs = 100; // Задержка между запросами в мс
-        let requestsCompleted = 0;
-
-        for (const id of findingIds) {
-            await delay(delayMs); // Задержка перед следующим запросом
-            GM_xmlhttpRequest({
-                method: 'GET',
-                url: `${defectDojoUrl}findings/${id}/`,
-                headers: {
-                    'Authorization': defectDojoToken,
-                    'Content-Type': 'application/json'
-                },
-                onload: response => {
-                    if (response.status === 200) {
-                        const finding = JSON.parse(response.responseText);
-                        findings.push({
-                            id: finding.id,
-                            title: finding.title,
-                            vulnerabilityIds: finding.vulnerability_ids,
-                            cwe: finding.cwe,
-                            severity: finding.severity,
-                            description: finding.description || "N/A"
-                        });
-                    } else {
-                        console.error(`Failed to fetch finding ${id}: ${response.status} - ${response.statusText}`);
-                    }
-                    requestsCompleted++;
-                    if (requestsCompleted === findingIds.length) {
-                        callback(findings);
-                    }
-                },
-                onerror: error => {
-                    console.error(`Error fetching finding ${id}:`, error);
-                    requestsCompleted++;
-                    if (requestsCompleted === findingIds.length) {
-                        callback(findings);
-                    }
-                }
-            });
-        }
-    }
-
-    // Функция для получения имен продукта и engagement
-    function getProductAndEngagementNames(finding, callback) {
-        let productName = "N/A";
-        let engagementName = "N/A";
-
-        const fetchProductName = new Promise((resolve, reject) => {
-            if (finding.productLink) {
-                const productId = finding.productLink.split("/").pop();
-                GM_xmlhttpRequest({
-                    method: 'GET',
-                    url: `${defectDojoUrl}products/${productId}/`,
-                    headers: {
-                        'Authorization': defectDojoToken,
-                        'Content-Type': 'application/json'
-                    },
-                    onload: response => {
-                        if (response.status === 200) {
-                            const product = JSON.parse(response.responseText);
-                            productName = product.name;
-                        } else {
-                            console.error(`Failed to fetch product ${productId}: ${response.status} - ${response.statusText}`);
-                        }
-                        resolve();
-                    },
-                    onerror: error => {
-                        console.error(`Error fetching product ${productId}:`, error);
-                        resolve();
-                    }
-                });
+        
+        // Обрабатываем уязвимости пакетами
+        const processedFindings = await processBatch(selectedFindings, async (finding) => {
+            // Получаем данные о уязвимости
+            const findingData = await fetchFindingData(finding.id);
+            if (!findingData) return null;
+            
+            // Добавляем данные о ссылках
+            findingData.engagementLink = finding.engagementLink;
+            findingData.productLink = finding.productLink;
+            findingData.row = finding.row;
+            
+            // Получаем данные о продукте и engagement
+            findingData.productName = await fetchProductData(finding.productId);
+            findingData.engagementName = await fetchEngagementData(finding.engagementId);
+            
+            // Проверяем, существует ли задача для этой уязвимости
+            const findingUrl = `https://${CONFIG.defectDojo.domain}/finding/${finding.id}`;
+            const existingTask = openProjectTasks.find(task => task.findingUrl === findingUrl);
+            
+            if (existingTask) {
+                showNotification(`Задача для ID ${finding.id} уже существует: #${existingTask.id}`, 'warning');
+                finding.row.style.backgroundColor = 'rgba(255, 193, 7, 0.2)';
+                return { ...findingData, existingTask };
+            }
+            
+            // Создаем задачу в OpenProject
+            const createdTask = await createOpenProjectTask(findingData);
+            if (createdTask) {
+                finding.row.style.backgroundColor = 'rgba(76, 175, 80, 0.2)';
+                return { ...findingData, createdTask };
             } else {
-                resolve();
+                finding.row.style.backgroundColor = 'rgba(244, 67, 54, 0.2)';
+                return findingData;
             }
         });
-
-        const fetchEngagementName = new Promise((resolve, reject) => {
-            if (finding.engagementLink) {
-                const engagementId = finding.engagementLink.split("/").pop();
-                GM_xmlhttpRequest({
-                    method: 'GET',
-                    url: `${defectDojoUrl}engagements/${engagementId}/`,
-                    headers: {
-                        'Authorization': defectDojoToken,
-                        'Content-Type': 'application/json'
-                    },
-                    onload: response => {
-                        if (response.status === 200) {
-                            const engagement = JSON.parse(response.responseText);
-                            engagementName = engagement.name;
-                        } else {
-                            console.error(`Failed to fetch engagement ${engagementId}: ${response.status} - ${response.statusText}`);
-                        }
-                        resolve();
-                    },
-                    onerror: error => {
-                        console.error(`Error fetching engagement ${engagementId}:`, error);
-                        resolve();
-                    }
-                });
-            } else {
-                resolve();
-            }
-        });
-
-        Promise.all([fetchProductName, fetchEngagementName]).then(() => {
-            callback({
-                productName: productName,
-                engagementName: engagementName
-            });
-        });
+        
+        // Показываем итоговое уведомление
+        const created = processedFindings.filter(f => f.createdTask).length;
+        const existing = processedFindings.filter(f => f.existingTask).length;
+        const failed = selectedFindings.length - created - existing;
+        
+        showNotification(`Обработано: ${processedFindings.length}, создано: ${created}, уже существуют: ${existing}, ошибок: ${failed}`, 
+                        failed > 0 ? 'warning' : 'success', 
+                        5000);
+        
+        return processedFindings;
     }
-
-    // Функция для получения задач из OpenProject
-    function fetchOpenProjectTasks(callback) {
-        GM_xmlhttpRequest({
-            method: 'GET',
-            url: openprojectUrl,
-            headers: {
-                'Authorization': openprojectAuth,
-                'Content-Type': 'application/json'
-            },
-            onload: response => {
-                if (response.status === 200) {
-                    const data = JSON.parse(response.responseText);
-                    const tasks = data._embedded.elements;
-                    callback(tasks);
-                } else {
-                    console.error(`Failed to fetch OpenProject tasks: ${response.status} - ${response.statusText}`);
-                    callback([]);
-                }
-            },
-            onerror: error => {
-                console.error("Error fetching OpenProject tasks:", error);
-                callback([]);
-            }
-        });
+    
+    // ========== ВИЗУАЛИЗАЦИЯ ==========
+    
+    // Добавление кнопки отправки
+    function addSendButton() {
+        const btnGroup = document.querySelector(".dt-buttons.btn-group");
+        if (!btnGroup) return;
+        
+        const button = document.createElement("button");
+        button.className = "dd-button";
+        button.type = "button";
+        button.innerHTML = `
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="22" y1="2" x2="11" y2="13"></line>
+                <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+            </svg>
+            Отправить в OpenProject
+        `;
+        button.onclick = handleSendButtonClick;
+        btnGroup.appendChild(button);
     }
-
-        // Функция для создания задачи в OpenProject, если она не существует
-    function createOpenProjectTaskIfNotExists(finding, openprojectTasks) {
-        const { id, engagementLink, productLink, productName, engagementName, vulnerabilityIds, cwe, severity, description } = finding;
-        const findingUrl = `https://YOUR_DEFECTDOJO_DOMAIN/finding/${id}`; //ЗАМЕНИТЬ ИНФОРМАЦИЮ. Example: https://demo.defectdojo.org/finding/
-
-        // Проверяем, существует ли уже задача в OpenProject
-        const taskExists = openprojectTasks.some(task => task.description.raw.includes(findingUrl));
-        if (taskExists) {
-            alert(`Task for finding ID ${id} already exists in OpenProject. Skipping creation.`);
+    
+    // Обработка клика по кнопке отправки
+    async function handleSendButtonClick() {
+        const selectedFindings = extractSelectedFindings();
+        
+        if (selectedFindings.length === 0) {
+            showNotification("Выберите хотя бы одну уязвимость", "warning");
             return;
         }
-
-        // Формируем ссылки на уязвимости, или выводим "N/A", если нет уязвимостей
-        const vulnerabilityLinks = vulnerabilityIds && vulnerabilityIds.length > 0
-            ? vulnerabilityIds.map(vul => `[${vul.vulnerability_id}](https://cve.mitre.org/cgi-bin/cvename.cgi?name=${vul.vulnerability_id})`).join(", ")
-            : "N/A";
-
-        // Проверяем наличие значений CWE и Severity, иначе выводим "N/A"
-        const cweText = cwe ? `[CWE-${cwe}](https://cwe.mitre.org/data/definitions/${cwe}.html)` : "N/A";
-        const severityText = severity || "N/A";
-
-        // Формируем ссылки на продукт и engagement
-        const productLinkMarkdown = productName ? `[${productName}](${productLink})` : "N/A";
-        const engagementLinkMarkdown = engagementName ? `[${engagementName}](${engagementLink})` : "N/A";
-
-        // Отправляем данные в OpenProject
-        const taskData = {
-            subject: finding.title,
-            description: {
-                format: "markdown",
-                raw: `**Finding ID/URL:** [${id}](${findingUrl})\n**CWE:** ${cweText}\n**Vulnerability IDs:** ${vulnerabilityLinks}\n**Severity:** ${severityText}\n**Product Link:** ${productLinkMarkdown}\n**Engagement Link:** ${engagementLinkMarkdown}\n\n**Description:** \n\n ${description}`
-            },
-            project: {
-                href: "/api/v3/projects/YOUR_PROJECT_ID" //ЗАМЕНИТЬ ИНФОРМАЦИЮ. Example: "/api/v3/projects/3" или "/api/v3/projects/demoDefect "(Имя проекта)
-            }
-        };
-
-        GM_xmlhttpRequest({
-            method: "POST",
-            url: openprojectUrl,
-            headers: {
-                Authorization: openprojectAuth,
-                "Content-Type": "application/json"
-            },
-            data: JSON.stringify(taskData),
-            onload: response => {
-                if (response.status === 200 || response.status === 201) {
-                    console.log(`Task created for finding: ${finding.title}`);
-                } else {
-                    console.error(`Failed to create task: ${response.status} - ${response.statusText}`);
-                    console.error(response.responseText); 
-                }
-            },
-            onerror: error => {
-                console.error("Error creating task:", error);
-            }
-        });
-    }
-
-    // Функция создания и добавления тултипа в поле чекбокса
-    function createTooltips(data) {
-        // Выбираем все чекбоксы уязвимостей
-        const checkboxes = document.querySelectorAll('.active_finding .noVis:first-child form input');
-        const processedIds = []; // Массив для хранения обработанных ID
-
-        checkboxes.forEach(checkbox => {
-            if (checkbox.parentElement && checkbox.parentElement.parentElement) {
-                const row = checkbox.parentElement.parentElement;
-                row.style.position = 'relative';
-
-                const tooltip = document.createElement('div');
-                tooltip.className = 'custom-tooltip';
-                tooltip.style.position = 'absolute';
-                tooltip.style.display = 'none';
-                tooltip.style.minWidth = '250px';
-                tooltip.style.maxWidth = '1000px';
-                tooltip.style.backgroundColor = 'rgba(51, 51, 51, 0.85)';
-                tooltip.style.color = '#fff';
-                tooltip.style.textAlign = 'left';
-                tooltip.style.borderRadius = '6px';
-                tooltip.style.padding = '10px';
-                tooltip.style.zIndex = '10001';
-                tooltip.style.top = '-50%';
-                tooltip.style.left = '100%';
-                tooltip.style.whiteSpace = 'normal';
-                tooltip.style.wordWrap = 'break-word';
-
-                // Ищем задачу, соответствующую уязвимости
-                const task = data.find(task => task.findingUrl.includes(`/finding/${checkbox.id}`));
-
-                if (task) {
-                    const link = document.createElement('a');
-                    link.href = `https://YOUR_OPENPROJECT_DOMAIN/projects/YOUR_PROJECT_ID/work_packages/${task.id}`; //ЗАМЕНИТЬ ИНФОРМАЦИЮ. Example: `https://localhost:8080/projects/3/work_packages/
-                    link.target = '_blank';
-                    link.innerText = `${task.id}`;
-                    link.style.color = '#3fa5cc';
-
-                    tooltip.innerHTML = `ID: `;
-                    tooltip.appendChild(link);
-                    tooltip.innerHTML += `;<br>Status: ${task.status};<br>Assignee: ${task.assignee};`;
-
-                    // Подсветка полей чекбокса
-                    // Закомментировать эту часть, если используется подсветка целого поля уязвимости 
-                    row.style.backgroundColor = task.assignee === 'N/A' ? 'lightgreen' : 'yellow';
-                } else {
-                    tooltip.innerHTML = "ID: N/A;<br>Status: N/A;<br>Assignee: N/A;";
-                    row.style.backgroundColor = 'lightcoral';
-                }
-                //
-                
-                row.appendChild(tooltip);
-
-                // Добавляем события для показа и скрытия тултипа
-                row.addEventListener('mouseover', () => {
-                    tooltip.style.display = 'block';
-                });
-
-                row.addEventListener('mouseout', () => {
-                    tooltip.style.display = 'none';
-                });
-
-                processedIds.push(checkbox.id);
-            }
-        });
-
-        console.log('Processed IDs for tooltips:', processedIds);
-    }
-
-    //Расскоментировать, если хотите подсветку всей строки. Сделать то же самое в main.
-    /*function highlightFindings(openprojectTasks) {
-        const rows = document.querySelectorAll('tr.active_finding');
-    
-        rows.forEach(row => {
-            const findingLink = row.querySelector('a[href*="/finding/"]');
-            if (findingLink) {
-                const findingId = findingLink.href.split('/').pop();
-                const task = openprojectTasks.find(task => task.findingUrl.includes(`/finding/${findingId}`));
-    
-                if (task) {
-                    if (task.assignee === 'N/A') {
-                        row.style.backgroundColor = 'lightgreen';
-                    } else {
-                        row.style.backgroundColor = 'yellow';
-                    }
-                    console.log(`Finding ID ${findingId} exists in OpenProject, highlighted green or yellow.`);
-                } else {
-                    row.style.backgroundColor = 'lightcoral';
-                    console.log(`Finding ID ${findingId} does not exist in OpenProject, highlighted red.`);
-                }
-            }
-        });
-    }*/
-
-    // Main функция для запроса данных и добавления тултипа
-    async function main() {
+        
+        // Меняем текст кнопки на индикатор загрузки
+        const button = event.currentTarget;
+        const originalContent = button.innerHTML;
+        button.innerHTML = `<div class="dd-loader"></div> Обработка...`;
+        button.disabled = true;
+        
         try {
-            const openProjectData = await fetchOpenProjectData(openprojectUrl, openprojectAuth);
-            const parsedOpenProjectData = parseOpenProjectData(openProjectData);
-            //highlightFindings(parsedOpenProjectData);
-            console.log('Parsed OpenProject Data:', parsedOpenProjectData);
-
-            createTooltips(parsedOpenProjectData);
+            await processFindings(selectedFindings);
         } catch (error) {
-            console.error('Error fetching data:', error);
+            console.error("Error processing findings:", error);
+            showNotification("Ошибка при обработке уязвимостей", "error");
+        } finally {
+            // Восстанавливаем кнопку
+            button.innerHTML = originalContent;
+            button.disabled = false;
+            
+            // Обновляем визуализацию статусов
+            await updateVisualization();
         }
-        addButton();
     }
-
-    // Запуск main функции
-    window.addEventListener('load', main);
-
-})(jQuery);
+    
+    // Создание тултипов для уязвимостей
+    async function createTooltips(openProjectTasks) {
+        // Выбираем все строки с уязвимостями
+        const rows = document.querySelectorAll('tr.active_finding');
+        
+        rows.forEach(row => {
+            // Находим ID уязвимости
+            const findingLink = row.querySelector('a[href*="/finding/"]');
+            if (!findingLink) return;
+            
+            const findingId = findingLink.href.split('/').pop();
+            const task = openProjectTasks.find(task => task.findingId === findingId);
+            
+            // Настраиваем стиль строки в зависимости от режима подсветки
+            if (CONFIG.ui.highlightMode === 'row') {
+                if (task) {
+                    row.style.backgroundColor = task.assignee === 'N/A' ? CONFIG.ui.colors.notAssigned : CONFIG.ui.colors.assigned;
+                } else {
+                    row.style.backgroundColor = CONFIG.ui.colors.notExists;
+                }
+            } else {
+                // Подсветка только ячейки с чекбоксом
+                const checkboxCell = row.querySelector('.noVis:first-child');
+                if (checkboxCell) {
+                    if (task) {
+                        checkboxCell.style.backgroundColor = task.assignee === 'N/A' ? CONFIG.ui.colors.notAssigned : CONFIG.ui.colors.assigned;
+                    } else {
+                        checkboxCell.style.backgroundColor = CONFIG.ui.colors.notExists;
+                    }
+                }
+            }
+            
+            // Создаем тултип
+            const tooltip = document.createElement('div');
+            tooltip.className = 'dd-tooltip';
+            
+            if (task) {
+                const statusColor = task.assignee === 'N/A' ? '#4CAF50' : '#FFC107';
+                
+                tooltip.innerHTML = `
+                    <div class="dd-tooltip-header">
+                        <strong>OpenProject #${task.id}</strong>
+                        <span class="dd-status-badge" style="background-color: ${statusColor}">
+                            ${task.status}
+                        </span>
+                    </div>
+                    <div class="dd-tooltip-content">
+                        <div><strong>Тема:</strong> ${task.subject}</div>
+                        <div><strong>Исполнитель:</strong> ${task.assignee}</div>
+                        <div>
+                            <a href="https://${CONFIG.openProject.domain}/projects/${CONFIG.openProject.projectId}/work_packages/${task.id}" 
+                               target="_blank" style="color: #3fa5cc; text-decoration: none;">
+                                Открыть задачу →
+                            </a>
+                        </div>
+                    </div>
+                `;
+            } else {
+                tooltip.innerHTML = `
+                    <div class="dd-tooltip-header">
+                        <strong>Нет в OpenProject</strong>
+                    </div>
+                    <div class="dd-tooltip-content">
+                        <div>Уязвимость не отправлена в OpenProject</div>
+                    </div>
+                `;
+            }
+            
+            // Добавляем тултип и события для его показа/скрытия
+            row.style.position = 'relative';
+            row.appendChild(tooltip);
+            
+            row.addEventListener('mouseover', () => {
+                tooltip.style.display = 'block';
+            });
+            
+            row.addEventListener('mouseout', () => {
+                tooltip.style.display = 'none';
+            });
+        });
+    }
+    
+    // Обновление визуализации статусов
+    async function updateVisualization() {
+        try {
+            const openProjectTasks = await fetchOpenProjectTasks();
+            createTooltips(openProjectTasks);
+        } catch (error) {
+            console.error('Error updating visualization:', error);
+            showNotification('Ошибка при обновлении статусов', 'error');
+        }
+    }
+    
+    // ========== ИНИЦИАЛИЗАЦИЯ ==========
+    
+    // Основная функция
+    async function initialize() {
+        try {
+            // Добавляем кнопку отправки
+            addSendButton();
+            
+            // Инициализируем визуализацию статусов
+            await updateVisualization();
+            
+            console.log('DefectDojo Plugin initialized successfully');
+        } catch (error) {
+            console.error('Error initializing plugin:', error);
+            showNotification('Ошибка при инициализации плагина', 'error');
+        }
+    }
+    
+    // Запускаем инициализацию после загрузки страницы
+    window.addEventListener('load', initialize);
+})();
