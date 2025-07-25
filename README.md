@@ -1,4 +1,4 @@
-# ***/summerwork/*** Plugin for DefectDojo 🧏‍♂️.
+# **_/summerwork/_** Plugin for DefectDojo 🧏‍♂️.
 
 ![visitor badge](https://visitor-badge.laobi.icu/badge?page_id=ArkDrifter.summerwork2024)
 
@@ -9,29 +9,29 @@
 
 ## Функционал ⚙️
 
-1. ***Переносит*** информацию об уязвимости в OpenProject. Подробная информация и ссылки записываются в ***описание***.
-   
-2. Отображается ***информация*** о существующих задачах в OpenProject. Она находится в ***области чекбоксов*** и выводится в окне.\
-   Содержит ***ссылку на id*** задачи в OpenProject, ***статус работы*** и ***имя пользователя*** который этой задачей занимается.
+1. **_Переносит_** информацию об уязвимости в OpenProject. Подробная информация и ссылки записываются в **_описание_**.
+2. Отображается **_информация_** о существующих задачах в OpenProject. Она находится в **_области чекбоксов_** и выводится в окне.\
+   Содержит **_ссылку на id_** задачи в OpenProject, **_статус работы_** и **_имя пользователя_** который этой задачей занимается. Также добавлена ссылка на **_проект_**, в котором находится задача.
 
-3. ***Подсвечивает*** строки/чекбоксы в зависимости от ***назначенного работника*** и существования задачи.
+3. **_Подсвечивает_** строки/чекбоксы в зависимости от **_назначенного работника_** и существования задачи.
+
    - Зеленый - существует задача в OP.
 
-    - Желтый - задача отдана кому-то.
+   - Желтый - задача отдана кому-то.
 
-    - Красный - задачи не существует.
-   
+   - Красный - задачи не существует.
+
 > [!WARNING]
-> Если нужна ***корректная*** подсветка и отображение всех задач, то нужно убрать в настройках статусов ***автозакрытие*** и также настроить ***отображение количества*** задач на странице OpenProject.
+> Если нужна **_корректная_** подсветка и отображение всех задач, то нужно убрать в настройках статусов **_автозакрытие_** и также настроить **_отображение количества_** задач на странице OpenProject.
 >
->  Это связано с тем, что в API ответ будет содержать не все задачи.
+> Это связано с тем, что в API ответ будет содержать не все задачи.
 
 <hr>
 
 > [!CAUTION]
 > При выборе больше 15 уязвимостей за раз и переносе в OpenProject появляются ошибки обработки данных.
 >
->  Чтобы решить её сделана оптимальная задержка между запросами. Настраивайте её на своё усмотрение.
+> Чтобы решить её сделана оптимальная задержка между запросами. Настраивайте её на своё усмотрение.
 
 <hr>
 
@@ -46,20 +46,19 @@
 ## Что использовалось: ❓
 
 1. OpenProject:
-    
-	- 🐳 Docker: https://hub.docker.com/r/openproject/openproject?uuid=FF6F4ABB-2650-41A2-9EC1-418FDF6E435F 
-	
-	- 📰 Документация API: https://www.openproject.org/docs/installation-and-operations/installation/docker/ 
+
+   - 🐳 Docker: https://hub.docker.com/r/openproject/openproject?uuid=FF6F4ABB-2650-41A2-9EC1-418FDF6E435F
+
+   - 📰 Документация API: https://www.openproject.org/docs/installation-and-operations/installation/docker/
 
 2. DefectDojo:
-    
-	- ❔ Как собрать образ для Docker: https://github.com/DefectDojo/django-DefectDojo/blob/master/readme-docs/DOCKER.md 
-    
-	- Git: https://github.com/DefectDojo/django-DefectDojo 
-    
-	- 🌐 Демо-сайт: https://demo.defectdojo.org/ 
 
-	- 📰 Документация API: https://defectdojo.github.io/django-DefectDojo/integrations/api-v2-docs/ 
+   - ❔ Как собрать образ для Docker: https://github.com/DefectDojo/django-DefectDojo/blob/master/readme-docs/DOCKER.md
+
+   - Git: https://github.com/DefectDojo/django-DefectDojo
+
+   - 🌐 Демо-сайт: https://demo.defectdojo.org/
+
+   - 📰 Документация API: https://defectdojo.github.io/django-DefectDojo/integrations/api-v2-docs/
 
 3. [Tampermonkey](https://www.tampermonkey.net/index.php)
-
