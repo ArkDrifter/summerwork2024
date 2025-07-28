@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         DefectDojo Plugin
 // @namespace    http://tampermonkey.net/
-// @version      0.5.2
+// @version      0.5.3
 // @description  Отправляет уязвимости в OpenProject, подсвечивает их при определенных условиях
 // @author       Marauder
 // @match        https://demo.defectdojo.org/finding*
@@ -231,7 +231,7 @@
   function fetchOpenProjectProjects(callback) {
     GM_xmlhttpRequest({
       method: "GET",
-      url: openprojectProjectsUrl,
+      url: openProjectProjectsUrl,
       headers: {
         Authorization: openProjectAuthHeader,
         "Content-Type": "application/json",
