@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         DefectDojo Plugin
 // @namespace    http://tampermonkey.net/
-// @version      0.5.3
-// @description  Отправляет уязвимости в OpenProject, подсвечивает их при определенных условиях
+// @version      0.5.4
+// @description  Отправляет уязвимости в OpenProject как задачу. Написано под версию OpenProject Community 13, DefectDojo 2.43.2
 // @author       Marauder
 // @match        https://demo.defectdojo.org/finding*
 // @match        https://demo.defectdojo.org/product/*/finding/*
@@ -337,20 +337,33 @@
     box.className = "op-modal-box";
 
     const label = document.createElement("label");
-    label.textContent = "Выберите проекты для отправки задач:";
+    label.textContent = "Выберите проект для отправки:";
     label.className = "op-modal-label";
 
     const form = document.createElement("form");
     form.className = "op-modal-form";
-    projects.forEach((project) => {
+
+    projects.forEach((project, index) => {
+      // Создаем контейнер для каждого проекта
+      const projectContainer = document.createElement("div");
+      projectContainer.className = "op-project-item";
+
       const lbl = document.createElement("label");
-      lbl.style.display = "block";
+      lbl.className = "op-project-label";
+
       const checkbox = document.createElement("input");
       checkbox.type = "checkbox";
       checkbox.value = project._links.self.href;
+      checkbox.className = "op-project-checkbox";
+
+      const projectName = document.createElement("span");
+      projectName.className = "op-project-name";
+      projectName.textContent = project.name;
+
       lbl.appendChild(checkbox);
-      lbl.appendChild(document.createTextNode(" " + project.name));
-      form.appendChild(lbl);
+      lbl.appendChild(projectName);
+      projectContainer.appendChild(lbl);
+      form.appendChild(projectContainer);
     });
 
     const okBtn = document.createElement("button");
@@ -386,17 +399,29 @@
     document.body.appendChild(modal);
   }
 
-  // Функция для добавления кнопки в панель инструментов DefectDojo
+  // Функция для добавления кнопок в панель инструментов DefectDojo
   function addButton() {
     const btnGroup = document.querySelector(".dt-buttons.btn-group");
     if (!btnGroup) return;
 
-    const button = document.createElement("button");
-    button.className = "btn btn-default";
-    button.type = "button";
-    button.innerHTML = "<span>Отправить в OpenProject</span>";
-    button.addEventListener("click", handleButtonClick);
-    btnGroup.appendChild(button);
+    // Кнопка отправки в OpenProject
+    const sendButton = document.createElement("button");
+    sendButton.className = "btn btn-default";
+    sendButton.type = "button";
+    sendButton.innerHTML = "<span>Отправить в OpenProject</span>";
+    sendButton.addEventListener("click", handleButtonClick);
+    btnGroup.appendChild(sendButton);
+
+    // Кнопка обновления состояний
+    const refreshButton = document.createElement("button");
+    refreshButton.className = "btn btn-default";
+    refreshButton.type = "button";
+    refreshButton.id = "dd-refresh-btn";
+    refreshButton.innerHTML = `
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px;"><path d="M23 4v6h-6"></path><path d="M1 20v-6h6"></path><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"></path></svg>
+      <span>Обновить</span>`;
+    refreshButton.addEventListener("click", handleRefreshClick);
+    btnGroup.appendChild(refreshButton);
   }
 
   // Функция для создания фиксированной кнопки отправки
@@ -410,8 +435,8 @@
     button.className = "dd-fixed-send-btn";
     button.type = "button";
     button.innerHTML = `
-      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:8px;"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
-      Отправить в OpenProject`;
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:8px;"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+        Отправить в OpenProject`;
     button.onclick = handleButtonClick;
     document.body.appendChild(button);
 
@@ -431,6 +456,62 @@
     });
 
     updateButtonVisibility();
+  }
+
+  // Функция обработки клика по кнопке обновления
+  async function handleRefreshClick() {
+    const refreshButton = document.getElementById("dd-refresh-btn");
+    if (!refreshButton) return;
+
+    // Показываем индикатор загрузки
+    refreshButton.disabled = true;
+    refreshButton.innerHTML = `
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px;animation: spin 1s linear infinite;"><path d="M23 4v6h-6"></path><path d="M1 20v-6h6"></path><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"></path></svg>
+      <span>Обновление...</span>`;
+
+    try {
+      showNotification("Обновление состояний задач...", "info");
+
+      // Получаем свежие данные из OpenProject
+      const openProjectData = await fetchOpenProjectData(
+        openProjectWorkPackagesUrl,
+        openProjectAuthHeader
+      );
+      const parsedOpenProjectData = parseOpenProjectData(openProjectData);
+
+      // Очищаем старые подсказки и создаем новые
+      clearAllTooltips();
+      createTooltips(parsedOpenProjectData);
+
+      showNotification("Состояния задач обновлены!", "success");
+      console.log("Обновленные данные OpenProject:", parsedOpenProjectData);
+    } catch (error) {
+      console.error("Ошибка при обновлении состояний:", error);
+      showNotification("Ошибка при обновлении состояний", "error");
+    } finally {
+      // Восстанавливаем кнопку
+      refreshButton.disabled = false;
+      refreshButton.innerHTML = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px;"><path d="M23 4v6h-6"></path><path d="M1 20v-6h6"></path><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"></path></svg>
+        <span>Обновить</span>`;
+    }
+  }
+
+  // Функция для очистки всех существующих подсказок
+  function clearAllTooltips() {
+    const existingTooltips = document.querySelectorAll(".custom-tooltip");
+    existingTooltips.forEach((tooltip) => tooltip.remove());
+
+    // Очищаем цветовую подсветку ячеек
+    const checkboxes = document.querySelectorAll(
+      'input[type="checkbox"].select_one'
+    );
+    checkboxes.forEach((checkbox) => {
+      const cell = checkbox.closest("td");
+      if (cell) {
+        cell.style.backgroundColor = "";
+      }
+    });
   }
 
   // Функция для создания всплывающих подсказок с информацией о задачах
@@ -524,21 +605,13 @@
             taskDiv.className = "custom-tooltip-task";
             contentDiv.appendChild(taskDiv);
 
-            // Заголовок задачи
-            const taskTitle = document.createElement("div");
-            taskTitle.style.fontSize = "16px";
-            taskTitle.style.fontWeight = "bold";
-            taskTitle.style.marginBottom = "8px";
-            taskTitle.innerHTML = `Задача #${task.id}`;
-            taskDiv.appendChild(taskTitle);
-
             // Строка с ID задачи
             const idRow = document.createElement("div");
             idRow.className = "custom-tooltip-row";
 
             const idLabel = document.createElement("span");
             idLabel.className = "custom-tooltip-label";
-            idLabel.textContent = "ID:";
+            idLabel.textContent = "Задача:";
 
             const idValue = document.createElement("span");
             idValue.className = "custom-tooltip-value";
@@ -546,7 +619,7 @@
             const taskLink = document.createElement("a");
             taskLink.href = taskUrl;
             taskLink.target = "_blank";
-            taskLink.textContent = task.id;
+            taskLink.textContent = `#${task.id}`;
 
             idValue.appendChild(taskLink);
             idRow.appendChild(idLabel);
@@ -578,6 +651,22 @@
             projectRow.appendChild(projectValue);
             taskDiv.appendChild(projectRow);
 
+            // Строка с исполнителем
+            const assigneeRow = document.createElement("div");
+            assigneeRow.className = "custom-tooltip-row";
+
+            const assigneeLabel = document.createElement("span");
+            assigneeLabel.className = "custom-tooltip-label";
+            assigneeLabel.textContent = "Исполнитель:";
+
+            const assigneeValue = document.createElement("span");
+            assigneeValue.className = "custom-tooltip-value";
+            assigneeValue.textContent = task.assignee;
+
+            assigneeRow.appendChild(assigneeLabel);
+            assigneeRow.appendChild(assigneeValue);
+            taskDiv.appendChild(assigneeRow);
+
             // Строка со статусом
             const statusRow = document.createElement("div");
             statusRow.className = "custom-tooltip-row";
@@ -597,10 +686,35 @@
             const status = task.status?.toLowerCase() || "";
             if (status.includes("new")) {
               statusBadge.classList.add("info");
+            } else if (
+              status.includes("in specification") ||
+              status.includes("specified")
+            ) {
+              statusBadge.classList.add("info");
+            } else if (status.includes("confirmed")) {
+              statusBadge.classList.add("info");
+            } else if (
+              status.includes("to be scheduled") ||
+              status.includes("scheduled")
+            ) {
+              statusBadge.classList.add("medium");
             } else if (status.includes("in progress")) {
               statusBadge.classList.add("medium");
+            } else if (status.includes("developed")) {
+              statusBadge.classList.add("medium");
+            } else if (
+              status.includes("in testing") ||
+              status.includes("tested")
+            ) {
+              statusBadge.classList.add("medium");
+            } else if (status.includes("test failed")) {
+              statusBadge.classList.add("high");
             } else if (status.includes("closed")) {
               statusBadge.classList.add("low");
+            } else if (status.includes("on hold")) {
+              statusBadge.classList.add("high");
+            } else if (status.includes("rejected")) {
+              statusBadge.classList.add("high");
             } else {
               statusBadge.classList.add("high");
             }
@@ -611,22 +725,6 @@
             statusRow.appendChild(statusLabel);
             statusRow.appendChild(statusValue);
             taskDiv.appendChild(statusRow);
-
-            // Строка с исполнителем
-            const assigneeRow = document.createElement("div");
-            assigneeRow.className = "custom-tooltip-row";
-
-            const assigneeLabel = document.createElement("span");
-            assigneeLabel.className = "custom-tooltip-label";
-            assigneeLabel.textContent = "Исполнитель:";
-
-            const assigneeValue = document.createElement("span");
-            assigneeValue.className = "custom-tooltip-value";
-            assigneeValue.textContent = task.assignee;
-
-            assigneeRow.appendChild(assigneeLabel);
-            assigneeRow.appendChild(assigneeValue);
-            taskDiv.appendChild(assigneeRow);
           });
 
           // Тултип только для строк с задачами
@@ -911,190 +1009,230 @@
   // Функция для добавления CSS стилей в страницу
   function addCustomStyles() {
     GM_addStyle(`
-      .op-modal {
-        position: fixed;
-        top: 0; left: 0; width: 100vw; height: 100vh;
-        background: rgba(0,0,0,0.4);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        z-index: 100000;
-      }
-      .op-modal-box {
-        background: #fff;
-        padding: 24px;
-        border-radius: 8px;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.2);
-        min-width: 320px;
-        text-align: center;
-      }
-      .op-modal-label {
-        display: block;
-        margin-bottom: 12px;
-        font-weight: bold;
-      }
-      .op-modal-form {
-        text-align: left;
-        margin-bottom: 16px;
-      }
-      .op-btn {
-        padding: 6px 18px;
-        border-radius: 4px;
-        border: 1px solid #bbb;
-        background: #f5f5f5;
-        color: #222;
-        cursor: pointer;
-        font-size: 15px;
-        margin: 0 2px;
-      }
-      .op-btn-primary {
-        background: #3fa5cc;
-        color: #fff;
-        border: 1px solid #3fa5cc;
-      }
-      .op-btn:active {
-        filter: brightness(0.95);
-      }
-      .custom-tooltip {
-        position: absolute;
-        display: none;
-        min-width: 300px;
-        max-width: 500px;
-        background-color: #2c3e50;
-        color: #ecf0f1;
-        text-align: left;
-        border-radius: 6px;
-        padding: 0;
-        z-index: 10001;
-        top: -120%;
-        left: 120%;
-        white-space: normal;
-        word-wrap: break-word;
-        box-shadow: 0 5px 15px rgba(0,0,0,0.3);
-        font-size: 14px;
-        line-height: 1.5;
-        transition: opacity 0.3s ease;
-        opacity: 0;
-        pointer-events: all;
-      }
-      .custom-tooltip-header {
-        background-color: #34495e;
-        color: white;
-        padding: 10px 15px;
-        border-top-left-radius: 6px;
-        border-top-right-radius: 6px;
-        font-weight: bold;
-        border-bottom: 1px solid #455a64;
-      }
-      .custom-tooltip-content {
-        padding: 12px 15px;
-      }
-      .custom-tooltip-task {
-        margin-bottom: 15px;
-        padding-bottom: 15px;
-        border-bottom: 1px dashed rgba(255,255,255,0.2);
-      }
-      .custom-tooltip-task:last-child {
-        margin-bottom: 0;
-        padding-bottom: 0;
-        border-bottom: none;
-      }
-      .custom-tooltip-label {
-        font-weight: bold;
-        margin-right: 5px;
-        color: #95a5a6;
-      }
-      .custom-tooltip-value {
-        color: #ecf0f1;
-      }
-      .custom-tooltip-row {
-        margin-bottom: 5px;
-        display: flex;
-      }
-      .custom-tooltip-row:last-child {
-        margin-bottom: 0;
-      }
-      .custom-tooltip a {
-        color: #3498db !important;
-        text-decoration: none;
-        transition: color 0.2s;
-      }
-      .custom-tooltip a:hover {
-        color: #2980b9 !important;
-        text-decoration: underline;
-      }
-      .custom-tooltip-badge {
-        display: inline-block;
-        padding: 2px 8px;
-        border-radius: 12px;
-        font-size: 12px;
-        font-weight: bold;
-      }
-      .custom-tooltip-badge.high {
-        background-color: #e74c3c;
-      }
-      .custom-tooltip-badge.medium {
-        background-color: #f39c12;
-      }
-      .custom-tooltip-badge.low {
-        background-color: #27ae60;
-      }
-      .custom-tooltip-badge.info {
-        background-color: #3498db;
-      }
-      .dd-notification {
-        position: fixed;
-        top: 20px;
-        right: 20px;
-        padding: 16px;
-        background-color: #333;
-        color: white;
-        border-radius: 4px;
-        z-index: 10002;
-        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
-        transition: opacity 0.3s, transform 0.3s;
-        opacity: 0;
-        transform: translateY(-20px);
-      }
-      .dd-notification.show {
-        opacity: 1;
-        transform: translateY(0);
-      }
-      .dd-notification.success {
-        background-color: #4CAF50;
-      }
-      .dd-notification.error {
-        background-color: #f44336;
-      }
-      .dd-notification.warning {
-        background-color: #ff9800;
-      }
-      .dd-fixed-send-btn {
-        position: fixed !important;
-        bottom: 32px;
-        right: 32px;
-        z-index: 10010;
-        box-shadow: 0 4px 16px rgba(0,0,0,0.18);
-        background: linear-gradient(90deg, #1bcf4c 0%, #0e9e2a 100%);
-        color: #fff !important;
-        font-size: 18px;
-        font-weight: bold;
-        border: none;
-        padding: 14px 32px;
-        border-radius: 8px;
-        display: none;
-        transition: opacity 0.2s, box-shadow 0.2s;
-        opacity: 0.95;
-      }
-      .dd-fixed-send-btn.visible {
-        display: block;
-      }
-      .dd-fixed-send-btn:hover {
+        .op-modal {
+          position: fixed;
+          top: 0; left: 0; width: 100vw; height: 100vh;
+          background: rgba(0,0,0,0.4);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          z-index: 100000;
+        }
+        .op-modal-box {
+          background: #fff;
+          padding: 24px;
+          border-radius: 8px;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+          min-width: 320px;
+          text-align: center;
+        }
+        .op-modal-label {
+          display: block;
+          margin-bottom: 12px;
+          font-weight: bold;
+        }
+        .op-modal-form {
+          text-align: left;
+          margin-bottom: 16px;
+          max-height: 300px;
+          overflow-y: auto;
+        }
+        .op-project-item {
+          margin-bottom: 8px;
+        }
+        .op-project-label {
+          display: flex;
+          align-items: center;
+          padding: 12px 16px;
+          background-color: #f8f9fa;
+          border: 1px solid #e9ecef;
+          border-radius: 6px;
+          cursor: pointer;
+          transition: all 0.2s ease;
+          min-height: 24px;
+        }
+        .op-project-label:hover {
+          background-color: #e9ecef;
+          border-color: #adb5bd;
+        }
+        .op-project-checkbox {
+          margin-right: 12px;
+          transform: scale(1.2);
+          cursor: pointer;
+        }
+        .op-project-name {
+          font-size: 14px;
+          font-weight: 500;
+          color: #495057;
+          flex: 1;
+        }
+        .op-project-separator {
+          height: 1px;
+          background-color: #dee2e6;
+          margin: 8px 0;
+        }
+        .op-btn {
+          padding: 6px 18px;
+          border-radius: 4px;
+          border: 1px solid #bbb;
+          background: #f5f5f5;
+          color: #222;
+          cursor: pointer;
+          font-size: 15px;
+          margin: 0 2px;
+        }
+        .op-btn-primary {
+          background: #3fa5cc;
+          color: #fff;
+          border: 1px solid #3fa5cc;
+        }
+        .op-btn:active {
+          filter: brightness(0.95);
+        }
+        .custom-tooltip {
+          position: absolute;
+          display: none;
+          min-width: 300px;
+          max-width: 500px;
+          background-color: #2c3e50;
+          color: #ecf0f1;
+          text-align: left;
+          border-radius: 6px;
+          padding: 0;
+          z-index: 10001;
+          top: -120%;
+          left: 120%;
+          white-space: normal;
+          word-wrap: break-word;
+          box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+          font-size: 14px;
+          line-height: 1.5;
+          transition: opacity 0.3s ease;
+          opacity: 0;
+          pointer-events: all;
+        }
+        .custom-tooltip-header {
+          background-color: #34495e;
+          color: white;
+          padding: 10px 15px;
+          border-top-left-radius: 6px;
+          border-top-right-radius: 6px;
+          font-weight: bold;
+          border-bottom: 1px solid #455a64;
+        }
+        .custom-tooltip-content {
+          padding: 12px 15px;
+        }
+        .custom-tooltip-task {
+          margin-bottom: 15px;
+          padding-bottom: 15px;
+          border-bottom: 1px dashed rgba(255,255,255,0.2);
+        }
+        .custom-tooltip-task:last-child {
+          margin-bottom: 0;
+          padding-bottom: 0;
+          border-bottom: none;
+        }
+        .custom-tooltip-label {
+          font-weight: bold;
+          margin-right: 5px;
+          color: #95a5a6;
+        }
+        .custom-tooltip-value {
+          color: #ecf0f1;
+        }
+        .custom-tooltip-row {
+          margin-bottom: 5px;
+          display: flex;
+        }
+        .custom-tooltip-row:last-child {
+          margin-bottom: 0;
+        }
+        .custom-tooltip a {
+          color: #3498db !important;
+          text-decoration: none;
+          transition: color 0.2s;
+        }
+        .custom-tooltip a:hover {
+          color: #2980b9 !important;
+          text-decoration: underline;
+        }
+        .custom-tooltip-badge {
+          display: inline-block;
+          padding: 2px 8px;
+          border-radius: 12px;
+          font-size: 12px;
+          font-weight: bold;
+        }
+        .custom-tooltip-badge.high {
+          background-color: #e74c3c;
+        }
+        .custom-tooltip-badge.medium {
+          background-color: #f39c12;
+        }
+        .custom-tooltip-badge.low {
+          background-color: #27ae60;
+        }
+        .custom-tooltip-badge.info {
+          background-color: #3498db;
+        }
+        .dd-notification {
+          position: fixed;
+          top: 20px;
+          right: 20px;
+          padding: 16px;
+          background-color: #333;
+          color: white;
+          border-radius: 4px;
+          z-index: 10002;
+          box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+          transition: opacity 0.3s, transform 0.3s;
+          opacity: 0;
+          transform: translateY(-20px);
+        }
+        .dd-notification.show {
+          opacity: 1;
+          transform: translateY(0);
+        }
+        .dd-notification.success {
+          background-color: #4CAF50;
+        }
+        .dd-notification.error {
+          background-color: #f44336;
+        }
+        .dd-notification.warning {
+          background-color: #ff9800;
+        }
+        .dd-fixed-send-btn {
+          position: fixed !important;
+          bottom: 32px;
+          right: 32px;
+          z-index: 10010;
+          box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+          background: linear-gradient(90deg, #1bcf4c 0%, #0e9e2a 100%);
+          color: #fff !important;
+          font-size: 18px;
+          font-weight: bold;
+          border: none;
+          padding: 14px 32px;
+          border-radius: 8px;
+          display: none;
+          transition: opacity 0.2s, box-shadow 0.2s;
+          opacity: 0.95;
+        }
+        .dd-fixed-send-btn.visible {
+          display: block;
+        }
+              .dd-fixed-send-btn:hover {
         box-shadow: 0 8px 32px rgba(27,207,76,0.25);
         opacity: 1;
         filter: brightness(1.08);
       }
-    `);
+      @keyframes spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+      }
+      `);
   }
 
   // ====================================
@@ -1117,7 +1255,7 @@
     } catch (error) {
       console.error("Error fetching data:", error);
     }
-    addButton(); // Добавляем кнопку в панель инструментов
+    addButton(); // Добавляем кнопки в панель инструментов
   }
 
   // Запускаем скрипт после загрузки страницы
