@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         DefectDojo Plugin
 // @namespace    http://tampermonkey.net/
-// @version      0.5.4
+// @version      0.5.5
 // @description  Отправляет уязвимости в OpenProject как задачу. Написано под версию OpenProject Community 13, DefectDojo 2.43.2
 // @author       Marauder
 // @match        https://demo.defectdojo.org/finding*
@@ -450,7 +450,10 @@
 
     // Слушаем изменения в чекбоксах для обновления видимости кнопки
     document.addEventListener("change", function (e) {
-      if (e.target.matches('input[type="checkbox"].select_one')) {
+      if (
+        e.target.matches('input[type="checkbox"].select_one') ||
+        e.target.matches("#select_all")
+      ) {
         updateButtonVisibility();
       }
     });
@@ -877,31 +880,48 @@
     fetchFindingsData(
       findingIds.map((finding) => finding.id),
       (findings) => {
+        const createTaskPromises = [];
         findings.forEach((finding, index) => {
           finding.engagementLink = findingIds[index].engagementLink;
           finding.productLink = findingIds[index].productLink;
-          processFinding(finding, openprojectTasks);
+          createTaskPromises.push(
+            new Promise((resolve) => {
+              processFinding(finding, openprojectTasks, resolve);
+            })
+          );
         });
-        showNotification(
-          `Обработано: ${findings.length} уязвимостей`,
-          "success"
-        );
+        Promise.all(createTaskPromises).then(() => {
+          showNotification(
+            `Обработано: ${findings.length} уязвимостей`,
+            "success"
+          );
+          handleRefreshClick();
+          document
+            .querySelectorAll('input[type="checkbox"].select_one:checked')
+            .forEach((cb) => (cb.checked = false));
+          const selectAllCheckbox = document.getElementById("select_all");
+          if (selectAllCheckbox) selectAllCheckbox.checked = false;
+        });
         console.log("Findings Data:", findings);
       }
     );
   }
 
   // Функция для обработки одной уязвимости
-  function processFinding(finding, openprojectTasks) {
+  function processFinding(finding, openprojectTasks, resolve) {
     getProductAndEngagementNames(finding, (productAndEngagementNames) => {
       finding.productName = productAndEngagementNames.productName;
       finding.engagementName = productAndEngagementNames.engagementName;
-      createOpenProjectTaskIfNotExists(finding, openprojectTasks);
+      createOpenProjectTaskIfNotExists(finding, openprojectTasks, resolve);
     });
   }
 
   // Функция для создания задачи в OpenProject (если она еще не существует)
-  function createOpenProjectTaskIfNotExists(finding, openprojectTasks) {
+  function createOpenProjectTaskIfNotExists(
+    finding,
+    openprojectTasks,
+    resolve
+  ) {
     const {
       id,
       engagementLink,
@@ -915,9 +935,7 @@
     } = finding;
     const findingUrl = `https://demo.defectdojo.org/finding/${id}`;
 
-    // Для каждого выбранного проекта создаем задачу
-    selectedProjectHrefs.forEach((projectHref) => {
-      // Проверяем, не существует ли уже задача для этой уязвимости в данном проекте
+    selectedProjectHrefs.forEach((projectHref, idx, arr) => {
       const taskExists = openprojectTasks.some(
         (task) =>
           task.description?.raw?.includes(findingUrl) &&
@@ -929,6 +947,7 @@
           `Задача для этой уязвимости ${id} уже существует в выбранном проекте.`,
           "warning"
         );
+        if (resolve) resolve();
         return;
       }
 
@@ -993,10 +1012,12 @@
               response.responseText
             );
           }
+          if (resolve) resolve();
         },
         onerror: (error) => {
           showNotification("Не удалось создать задачу", "error");
           console.error("Error creating task:", error);
+          if (resolve) resolve();
         },
       });
     });
