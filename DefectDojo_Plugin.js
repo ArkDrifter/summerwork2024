@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         DefectDojo Plugin
 // @namespace    http://tampermonkey.net/
-// @version      0.5.5
+// @version      0.5.6
 // @description  Отправляет уязвимости в OpenProject как задачу. Написано под версию OpenProject Community 13, DefectDojo 2.43.2
 // @author       Marauder
 // @match        https://demo.defectdojo.org/finding*
@@ -68,14 +68,19 @@
   }
 
   // Функция для отображения уведомлений пользователю
-  function showNotification(message, type = "info", duration = 3000) {
-    const existingNotifications = document.querySelectorAll(".dd-notification");
-    existingNotifications.forEach((notification) => notification.remove());
+  function showNotification(message, type = "info", duration = 5000) {
+    let container = document.querySelector(".dd-notification-container");
+    if (!container) {
+      container = document.createElement("div");
+      container.className = "dd-notification-container";
+      document.body.appendChild(container);
+    }
 
+    // Создаем новое уведомление
     const notification = document.createElement("div");
     notification.className = `dd-notification ${type}`;
     notification.textContent = message;
-    document.body.appendChild(notification);
+    container.appendChild(notification);
 
     setTimeout(() => notification.classList.add("show"), 10);
     setTimeout(() => {
@@ -91,48 +96,46 @@
   // Принимает массив ID уязвимостей и callback для обработки результатов
   async function fetchFindingsData(findingIds, callback) {
     const findings = [];
-    const delayMs = 100; // Задержка между запросами
     let requestsCompleted = 0;
 
-    for (const id of findingIds) {
-      await delay(delayMs);
-      GM_xmlhttpRequest({
-        method: "GET",
-        url: `${defectDojoApiUrl}findings/${id}/`,
-        headers: {
-          Authorization: defectDojoAuthToken,
-          "Content-Type": "application/json",
-        },
-        onload: (response) => {
-          if (response.status === 200) {
-            const finding = JSON.parse(response.responseText);
-            findings.push({
-              id: finding.id,
-              title: finding.title,
-              vulnerabilityIds: finding.vulnerability_ids,
-              cwe: finding.cwe,
-              severity: finding.severity,
-              description: finding.description || "N/A",
-            });
-          } else {
-            console.error(
-              `Failed to fetch finding ${id}: ${response.status} - ${response.statusText}`
-            );
-          }
-          requestsCompleted++;
-          if (requestsCompleted === findingIds.length) {
-            callback(findings);
-          }
-        },
-        onerror: (error) => {
-          console.error(`Error fetching finding ${id}:`, error);
-          requestsCompleted++;
-          if (requestsCompleted === findingIds.length) {
-            callback(findings);
-          }
-        },
+    // Параллельно отправляем все запросы
+    const requests = findingIds.map((id) => {
+      return new Promise((resolve) => {
+        GM_xmlhttpRequest({
+          method: "GET",
+          url: `${defectDojoApiUrl}findings/${id}/`,
+          headers: {
+            Authorization: defectDojoAuthToken,
+            "Content-Type": "application/json",
+          },
+          onload: (response) => {
+            if (response.status === 200) {
+              const finding = JSON.parse(response.responseText);
+              findings.push({
+                id: finding.id,
+                title: finding.title,
+                vulnerabilityIds: finding.vulnerability_ids,
+                cwe: finding.cwe,
+                severity: finding.severity,
+                description: finding.description || "N/A",
+              });
+            } else {
+              console.error(
+                `Failed to fetch finding ${id}: ${response.status} - ${response.statusText}`
+              );
+            }
+            resolve();
+          },
+          onerror: (error) => {
+            console.error(`Error fetching finding ${id}:`, error);
+            resolve();
+          },
+        });
       });
-    }
+    });
+
+    await Promise.all(requests);
+    callback(findings);
   }
 
   // Функция для получения названий продукта и engagement из DefectDojo
@@ -938,7 +941,7 @@
     selectedProjectHrefs.forEach((projectHref, idx, arr) => {
       const taskExists = openprojectTasks.some(
         (task) =>
-          task.description?.raw?.includes(findingUrl) &&
+          String(task.findingId) === String(id) &&
           task._links?.project?.href === projectHref
       );
 
@@ -1045,6 +1048,8 @@
           border-radius: 8px;
           box-shadow: 0 2px 8px rgba(0,0,0,0.2);
           min-width: 320px;
+          max-width: 400px;
+          width: 400px;
           text-align: center;
         }
         .op-modal-label {
@@ -1198,7 +1203,7 @@
           background-color: #3498db;
         }
         .dd-notification {
-          position: fixed;
+          position: relative;
           top: 20px;
           right: 20px;
           padding: 16px;
@@ -1210,6 +1215,10 @@
           transition: opacity 0.3s, transform 0.3s;
           opacity: 0;
           transform: translateY(-20px);
+          width: 340px;
+          min-height: 48px;
+          word-break: break-all;
+          white-space: normal;
         }
         .dd-notification.show {
           opacity: 1;
@@ -1253,6 +1262,21 @@
         from { transform: rotate(0deg); }
         to { transform: rotate(360deg); }
       }
+        .dd-notification-container {
+          position: fixed;
+          top: 20px;
+          right: 20px;
+          z-index: 10002;
+          display: flex;
+          flex-direction: column;
+          align-items: flex-end;
+          gap: 12px;
+        }
+        .dd-notification {
+          position: relative;
+          margin: 0;
+          margin-bottom: 0;
+        }
       `);
   }
 
