@@ -83,13 +83,43 @@
     // Создаем новое уведомление
     const notification = document.createElement("div");
     notification.className = `dd-notification ${type}`;
-    notification.textContent = message;
+
+    // Создаем иконку в зависимости от типа
+    const iconElement = document.createElement("div");
+    iconElement.className = "dd-notification-icon";
+    
+    let iconSvg = "";
+    switch (type) {
+      case "success":
+        iconSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12l2 2 4-4"></path><circle cx="12" cy="12" r="10"></circle></svg>`;
+        break;
+      case "error":
+        iconSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>`;
+        break;
+      case "warning":
+        iconSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>`;
+        break;
+      case "info":
+      default:
+        iconSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4"></path><path d="M12 8h.01"></path></svg>`;
+        break;
+    }
+    
+    iconElement.innerHTML = iconSvg;
+    
+    // Создаем контейнер для текста
+    const contentElement = document.createElement("div");
+    contentElement.className = "dd-notification-content";
+    contentElement.textContent = message;
+    
+    notification.appendChild(iconElement);
+    notification.appendChild(contentElement);
     container.appendChild(notification);
 
     setTimeout(() => notification.classList.add("show"), 10);
     setTimeout(() => {
       notification.classList.remove("show");
-      setTimeout(() => notification.remove(), 300);
+      setTimeout(() => notification.remove(), 400);
     }, duration);
   }
 
@@ -1304,34 +1334,81 @@
         }
         .dd-notification {
           position: relative;
-          top: 20px;
-          right: 20px;
-          padding: 16px;
-          background-color: #333;
-          color: white;
-          border-radius: 4px;
+          padding: 16px 20px;
+          background: linear-gradient(135deg, #1f2937 0%, #374151 100%);
+          color: #f9fafb;
+          border-radius: 12px;
           z-index: 10002;
-          box-shadow: 0 4px 8px rgba(0,0,0,0.2);
-          transition: opacity 0.3s, transform 0.3s;
+          box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15), 0 4px 10px rgba(0, 0, 0, 0.1);
+          transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
           opacity: 0;
-          transform: translateY(-20px);
-          width: 340px;
-          min-height: 48px;
-          word-break: break-all;
+          transform: translateX(20px) scale(0.95);
+          width: 380px;
+          min-height: 56px;
+          word-break: break-word;
           white-space: normal;
+          border-left: 4px solid #6b7280;
+          backdrop-filter: blur(10px);
+          font-size: 14px;
+          font-weight: 500;
+          line-height: 1.5;
+          display: flex;
+          align-items: center;
+          gap: 12px;
         }
         .dd-notification.show {
           opacity: 1;
-          transform: translateY(0);
+          transform: translateX(0) scale(1);
+        }
+        .dd-notification::before {
+          content: '';
+          position: absolute;
+          left: 0;
+          top: 0;
+          width: 4px;
+          height: 100%;
+          background: linear-gradient(180deg, #6b7280 0%, #4b5563 100%);
+          border-radius: 12px 0 0 12px;
+        }
+        .dd-notification-icon {
+          flex-shrink: 0;
+          width: 20px;
+          height: 20px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .dd-notification-content {
+          flex: 1;
+          margin: 0;
         }
         .dd-notification.success {
-          background-color: #4CAF50;
+          background: linear-gradient(135deg, #059669 0%, #10b981 100%);
+          border-left-color: #34d399;
+        }
+        .dd-notification.success::before {
+          background: linear-gradient(180deg, #34d399 0%, #10b981 100%);
         }
         .dd-notification.error {
-          background-color: #f44336;
+          background: linear-gradient(135deg, #dc2626 0%, #ef4444 100%);
+          border-left-color: #f87171;
+        }
+        .dd-notification.error::before {
+          background: linear-gradient(180deg, #f87171 0%, #ef4444 100%);
         }
         .dd-notification.warning {
-          background-color: #ff9800;
+          background: linear-gradient(135deg, #d97706 0%, #f59e0b 100%);
+          border-left-color: #fbbf24;
+        }
+        .dd-notification.warning::before {
+          background: linear-gradient(180deg, #fbbf24 0%, #f59e0b 100%);
+        }
+        .dd-notification.info {
+          background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%);
+          border-left-color: #60a5fa;
+        }
+        .dd-notification.info::before {
+          background: linear-gradient(180deg, #60a5fa 0%, #3b82f6 100%);
         }
         .dd-fixed-send-btn {
           position: fixed !important;
@@ -1412,16 +1489,36 @@
           position: fixed;
           top: 20px;
           right: 20px;
+          bottom: 140px;
           z-index: 10002;
           display: flex;
           flex-direction: column;
           align-items: flex-end;
-          gap: 12px;
+          gap: 16px;
+          overflow-y: auto;
+          overflow-x: hidden;
+          max-height: calc(100vh - 160px);
+          padding-right: 8px;
+          scrollbar-width: thin;
+          scrollbar-color: rgba(156, 163, 175, 0.3) transparent;
+        }
+        .dd-notification-container::-webkit-scrollbar {
+          width: 6px;
+        }
+        .dd-notification-container::-webkit-scrollbar-track {
+          background: transparent;
+        }
+        .dd-notification-container::-webkit-scrollbar-thumb {
+          background: rgba(156, 163, 175, 0.3);
+          border-radius: 3px;
+        }
+        .dd-notification-container::-webkit-scrollbar-thumb:hover {
+          background: rgba(156, 163, 175, 0.5);
         }
         .dd-notification {
           position: relative;
           margin: 0;
-          margin-bottom: 0;
+          flex-shrink: 0;
         }
       `);
   }
