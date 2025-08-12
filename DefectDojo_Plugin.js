@@ -938,19 +938,30 @@
     } = finding;
     const findingUrl = `https://demo.defectdojo.org/finding/${id}`;
 
+    let tasksProcessed = 0;
+    const totalTasks = selectedProjectHrefs.length;
+
     selectedProjectHrefs.forEach((projectHref, idx, arr) => {
-      const taskExists = openprojectTasks.some(
-        (task) =>
-          String(task.findingId) === String(id) &&
+      const taskExists = openprojectTasks.some((task) => {
+        const findingIdMatch = task.description?.raw?.match(
+          /\*\*Finding ID\/URL:\*\*\s*\[(\d+)\]/
+        );
+        const taskFindingId = findingIdMatch ? findingIdMatch[1] : null;
+
+        return (
+          String(taskFindingId) === String(id) &&
           task._links?.project?.href === projectHref
-      );
+        );
+      });
 
       if (taskExists) {
         showNotification(
-          `Задача для этой уязвимости ${id} уже существует в выбранном проекте.`,
-          "warning"
+          `Задача для уязвимости ${id} уже существует в выбранном проекте.`,
+          "warning",
+          7000
         );
-        if (resolve) resolve();
+        tasksProcessed++;
+        if (tasksProcessed === totalTasks && resolve) resolve();
         return;
       }
 
@@ -1015,12 +1026,14 @@
               response.responseText
             );
           }
-          if (resolve) resolve();
+          tasksProcessed++;
+          if (tasksProcessed === totalTasks && resolve) resolve();
         },
         onerror: (error) => {
           showNotification("Не удалось создать задачу", "error");
           console.error("Error creating task:", error);
-          if (resolve) resolve();
+          tasksProcessed++;
+          if (tasksProcessed === totalTasks && resolve) resolve();
         },
       });
     });
