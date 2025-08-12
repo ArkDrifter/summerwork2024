@@ -442,7 +442,7 @@
     button.className = "dd-fixed-send-btn";
     button.type = "button";
     button.innerHTML = `
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:8px;"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:8px;"><path d="M12 2L2 7l10 5 10-5-10-5z"></path><path d="M2 17l10 5 10-5M2 12l10 5 10-5"></path></svg>
         <span class="button-text">Отправить в OpenProject</span>
         <span class="button-counter"></span>`;
     button.onclick = handleButtonClick;
@@ -1338,34 +1338,66 @@
           bottom: 32px;
           right: 32px;
           z-index: 10010;
-          box-shadow: 0 4px 16px rgba(0,0,0,0.18);
-          background: linear-gradient(90deg, #1bcf4c 0%, #0e9e2a 100%);
+          box-shadow: 0 8px 32px rgba(59, 130, 246, 0.3), 0 4px 16px rgba(0, 0, 0, 0.1);
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
           color: #fff !important;
-          font-size: 18px;
-          font-weight: bold;
+          font-size: 16px;
+          font-weight: 600;
           border: none;
-          padding: 14px 32px;
-          border-radius: 8px;
+          padding: 18px 28px;
+          border-radius: 16px;
           display: none;
-          transition: all 0.3s ease;
-          opacity: 0.95;
+          transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+          opacity: 1;
           cursor: pointer;
+          backdrop-filter: blur(10px);
+          position: relative;
+          overflow: hidden;
+          min-width: 200px;
+          text-align: center;
+        }
+        .dd-fixed-send-btn::before {
+          content: '';
+          position: absolute;
+          top: 0;
+          left: -100%;
+          width: 100%;
+          height: 100%;
+          background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+          transition: left 0.6s;
+        }
+        .dd-fixed-send-btn:hover::before {
+          left: 100%;
         }
         .dd-fixed-send-btn.visible {
           display: block;
         }
         .dd-fixed-send-btn.processing {
-          background: linear-gradient(90deg, #f39c12 0%, #e67e22 100%);
+          background: linear-gradient(135deg, #ff7b7b 0%, #ff8c8c 50%, #ffa8a8 100%);
           cursor: not-allowed;
+          animation: pulse 2s infinite;
         }
         .dd-fixed-send-btn.success {
-          background: linear-gradient(90deg, #27ae60 0%, #2ecc71 100%);
+          background: linear-gradient(135deg, #4ade80 0%, #22c55e 50%, #16a34a 100%);
+          animation: successPulse 0.6s ease-out;
+        }
+        @keyframes pulse {
+          0%, 100% { transform: scale(1); }
+          50% { transform: scale(1.02); }
+        }
+        @keyframes successPulse {
+          0% { transform: scale(1); }
+          50% { transform: scale(1.05); }
+          100% { transform: scale(1); }
         }
         .dd-fixed-send-btn:hover:not(.processing) {
-          box-shadow: 0 8px 32px rgba(27,207,76,0.25);
-          opacity: 1;
-          filter: brightness(1.08);
-          transform: translateY(-2px);
+          box-shadow: 0 12px 40px rgba(102, 126, 234, 0.4), 0 8px 24px rgba(0, 0, 0, 0.15);
+          transform: translateY(-3px) scale(1.02);
+          background: linear-gradient(135deg, #7c3aed 0%, #8b5cf6 100%);
+        }
+        .dd-fixed-send-btn:active:not(.processing) {
+          transform: translateY(-1px) scale(0.98);
+          transition: all 0.1s ease;
         }
         .dd-fixed-send-btn .button-counter {
           margin-left: 8px;
