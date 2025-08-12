@@ -8,6 +8,10 @@
 // @match        https://demo.defectdojo.org/product/*/finding/*
 // @grant        GM_xmlhttpRequest
 // @grant        GM_addStyle
+// @grant        GM_setValue
+// @grant        GM_getValue
+// @grant        GM_deleteValue
+// @grant        GM_listValues
 // @homepageURL  https://github.com/ArkDrifter/summerwork2024/issues
 // @updateURL    https://raw.githubusercontent.com/ArkDrifter/summerwork2024/main/DefectDojo_Plugin.js
 // @downloadURL  https://raw.githubusercontent.com/ArkDrifter/summerwork2024/main/DefectDojo_Plugin.js
@@ -439,7 +443,8 @@
     button.type = "button";
     button.innerHTML = `
         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:8px;"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
-        Отправить в OpenProject`;
+        <span class="button-text">Отправить в OpenProject</span>
+        <span class="button-counter"></span>`;
     button.onclick = handleButtonClick;
     document.body.appendChild(button);
 
@@ -449,6 +454,12 @@
         'input[type="checkbox"].select_one:checked'
       ).length;
       button.classList.toggle("visible", checked > 0);
+
+      // Обновляем счетчик в кнопке
+      const counter = button.querySelector(".button-counter");
+      if (counter) {
+        counter.textContent = checked > 0 ? `(${checked})` : "";
+      }
     }
 
     // Слушаем изменения в чекбоксах для обновления видимости кнопки
@@ -854,6 +865,48 @@
   // Глобальная переменная для хранения выбранных проектов
   let selectedProjectHrefs = [];
 
+  // Глобальные переменные для отслеживания прогресса
+  let totalFindingsToProcess = 0;
+  let processedFindings = 0;
+
+  // Функция для обновления состояния кнопки отправки
+  function updateSendButtonState(state, text, counter = "") {
+    const button = document.getElementById("dd-fixed-send-btn");
+    if (!button) return;
+
+    const buttonText = button.querySelector(".button-text");
+    const buttonCounter = button.querySelector(".button-counter");
+    const icon = button.querySelector("svg");
+
+    if (!buttonText || !buttonCounter || !icon) return;
+
+    button.disabled = state === "processing";
+
+    switch (state) {
+      case "idle":
+        button.className = "dd-fixed-send-btn visible";
+        buttonText.textContent = text || "Отправить в OpenProject";
+        buttonCounter.textContent = counter;
+        icon.style.animation = "none";
+        break;
+      case "processing":
+        button.className = "dd-fixed-send-btn visible processing";
+        buttonText.textContent = text || "Обработка...";
+        buttonCounter.textContent = counter;
+        icon.style.animation = "spin 1s linear infinite";
+        break;
+      case "success":
+        button.className = "dd-fixed-send-btn visible success";
+        buttonText.textContent = text || "Готово!";
+        buttonCounter.textContent = "";
+        icon.style.animation = "none";
+        setTimeout(() => {
+          updateSendButtonState("idle", "Отправить в OpenProject");
+        }, 2000);
+        break;
+    }
+  }
+
   // Основная функция обработки клика по кнопке отправки
   function handleButtonClick() {
     const findingIds = extractSelectedFindings();
@@ -879,7 +932,17 @@
 
   // Функция для обработки массива уязвимостей
   function processFindings(findingIds, openprojectTasks) {
+    // Инициализируем прогресс
+    totalFindingsToProcess = findingIds.length;
+    processedFindings = 0;
+
+    updateSendButtonState(
+      "processing",
+      "Обработка...",
+      `0/${totalFindingsToProcess}`
+    );
     showNotification(`Обработка ${findingIds.length} уязвимостей...`, "info");
+
     fetchFindingsData(
       findingIds.map((finding) => finding.id),
       (findings) => {
@@ -889,21 +952,45 @@
           finding.productLink = findingIds[index].productLink;
           createTaskPromises.push(
             new Promise((resolve) => {
-              processFinding(finding, openprojectTasks, resolve);
+              processFinding(finding, openprojectTasks, () => {
+                processedFindings++;
+                updateSendButtonState(
+                  "processing",
+                  "Обработка...",
+                  `${processedFindings}/${totalFindingsToProcess}`
+                );
+                resolve();
+              });
             })
           );
         });
+
         Promise.all(createTaskPromises).then(() => {
+          updateSendButtonState(
+            "success",
+            "Готово!",
+            `${processedFindings}/${totalFindingsToProcess}`
+          );
           showNotification(
             `Обработано: ${findings.length} уязвимостей`,
             "success"
           );
-          handleRefreshClick();
-          document
-            .querySelectorAll('input[type="checkbox"].select_one:checked')
-            .forEach((cb) => (cb.checked = false));
-          const selectAllCheckbox = document.getElementById("select_all");
-          if (selectAllCheckbox) selectAllCheckbox.checked = false;
+
+          // Очищаем чекбоксы и обновляем состояние
+          setTimeout(() => {
+            handleRefreshClick();
+            document
+              .querySelectorAll('input[type="checkbox"].select_one:checked')
+              .forEach((cb) => (cb.checked = false));
+            const selectAllCheckbox = document.getElementById("select_all");
+            if (selectAllCheckbox) selectAllCheckbox.checked = false;
+
+            // Обновляем видимость кнопки
+            const button = document.getElementById("dd-fixed-send-btn");
+            if (button) {
+              button.classList.remove("visible");
+            }
+          }, 1000);
         });
         console.log("Findings Data:", findings);
       }
@@ -1260,17 +1347,31 @@
           padding: 14px 32px;
           border-radius: 8px;
           display: none;
-          transition: opacity 0.2s, box-shadow 0.2s;
+          transition: all 0.3s ease;
           opacity: 0.95;
+          cursor: pointer;
         }
         .dd-fixed-send-btn.visible {
           display: block;
         }
-              .dd-fixed-send-btn:hover {
-        box-shadow: 0 8px 32px rgba(27,207,76,0.25);
-        opacity: 1;
-        filter: brightness(1.08);
-      }
+        .dd-fixed-send-btn.processing {
+          background: linear-gradient(90deg, #f39c12 0%, #e67e22 100%);
+          cursor: not-allowed;
+        }
+        .dd-fixed-send-btn.success {
+          background: linear-gradient(90deg, #27ae60 0%, #2ecc71 100%);
+        }
+        .dd-fixed-send-btn:hover:not(.processing) {
+          box-shadow: 0 8px 32px rgba(27,207,76,0.25);
+          opacity: 1;
+          filter: brightness(1.08);
+          transform: translateY(-2px);
+        }
+        .dd-fixed-send-btn .button-counter {
+          margin-left: 8px;
+          font-size: 16px;
+          opacity: 0.9;
+        }
       @keyframes spin {
         from { transform: rotate(0deg); }
         to { transform: rotate(360deg); }
